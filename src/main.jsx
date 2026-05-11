@@ -678,41 +678,43 @@ Confidence: ${prediction.confidence}%`;
         </section>
 
         <section className={`grid three ${activeTab !== "dashboard" ? "tab-hidden" : ""}`}>
-          <article className="panel"><div className="panel-title"><CloudSun /><h2>Weather</h2></div><div className="weather-card"><strong>{input.temperature}C</strong><span>{input.humidity}% humidity</span><span>{input.rainfall}mm rainfall</span></div><p className="muted">Rain alert: {input.rainfall > 75 ? "High rainfall expected, watch disease risk." : "No severe rain warning."}</p></article>
-          <article className="panel"><div className="panel-title"><MapPin /><h2>Mandi Comparison</h2></div><div className="city-list">{cityPrices.slice(0, 6).map((item, index) => <div key={item.city}><span>{index === 0 ? "Best" : item.city}</span><strong>{item.city}: {formatINR(item.price)}</strong></div>)}</div></article>
-          <article className="panel"><div className="panel-title"><Leaf /><h2>Recommended Crops</h2></div><div className="recommend-list">{recommendations.map((item) => <div key={item.name}><strong>{item.name}</strong><span>{item.score}% match</span><small>{item.reason}</small></div>)}</div></article>
+          <article className="panel"><div className="panel-title"><CloudSun /><h2>{t("weather")}</h2></div><div className="weather-card"><strong>{input.temperature}C</strong><span>{input.humidity}%</span><span>{input.rainfall}mm</span></div><p className="muted">{input.rainfall > 75 ? t("highRain") : t("noSevereRain")}</p></article>
+          <article className="panel"><div className="panel-title"><MapPin /><h2>{t("mandiComparison")}</h2></div><div className="city-list">{cityPrices.slice(0, 6).map((item, index) => <div key={item.city}><span>{index === 0 ? t("best") : item.city}</span><strong>{item.city}: {formatINR(item.price)}</strong></div>)}</div></article>
+          <article className="panel"><div className="panel-title"><Leaf /><h2>{t("recommendedCrops")}</h2></div><div className="recommend-list">{recommendations.map((item) => <div key={item.name}><strong>{item.name}</strong><span>{item.score}%</span><small>{item.reason}</small></div>)}</div></article>
         </section>
 
         <section className={`grid two ${activeTab !== "compare" ? "tab-hidden" : ""}`} id="compare">
           <article className="panel">
-            <div className="panel-title"><Scale /><h2>Should I Grow This or That?</h2></div>
+            <div className="panel-title"><Scale /><h2>{t("compareTitle")}</h2></div>
+            <p className="muted">{t("compareHelp")}</p>
             <div className="form-grid"><CropField label="Crop A" value={compare.cropA} onChange={(value) => setCompare((current) => ({ ...current, cropA: value }))} /><CropField label="Crop B" value={compare.cropB} onChange={(value) => setCompare((current) => ({ ...current, cropB: value }))} /></div>
           </article>
           <article className="panel">
-            <div className="compare-list">{comparison.map((item, index) => <div className={index === 0 ? "compare-card winner" : "compare-card"} key={item.crop}><span>{index === 0 ? "Recommended" : "Alternative"}</span><strong>{item.crop}</strong><p>{formatINR(item.predicted)}/q · {item.fit}% fit · {item.demand} demand · {item.risk} risk</p><small>{item.reason}</small></div>)}</div>
+            <div className="compare-list">{comparison.map((item, index) => <div className={index === 0 ? "compare-card winner" : "compare-card"} key={item.crop}><span>{index === 0 ? t("recommended") : t("alternative")}</span><strong>{item.crop}</strong><p>{formatINR(item.predicted)}/q · {item.fit}% {t("cropFit")} · {item.demand} {t("demand")} · {item.risk} {t("risk")}</p><small>{item.reason}</small><div className="score-track"><span style={{ width: `${item.score}%` }} /></div></div>)}</div>
           </article>
         </section>
 
         <section className={`grid two ${activeTab !== "alerts" ? "tab-hidden" : ""}`} id="alerts">
           <article className="panel">
-            <div className="panel-title"><Bell /><h2>Set Price Alert</h2></div>
+            <div className="panel-title"><Bell /><h2>{t("setAlert")}</h2></div>
             <div className="form-grid"><CropField label="Crop name" value={alertForm.crop} onChange={(value) => setAlertForm((current) => ({ ...current, crop: value }))} /><SelectField label="Condition" value={alertForm.condition} onChange={(value) => setAlertForm((current) => ({ ...current, condition: value }))} options={["above", "below"]} /><TextField label="Threshold Rs/q" type="number" value={alertForm.threshold} onChange={(value) => setAlertForm((current) => ({ ...current, threshold: value }))} /><SelectField label="State" optional value={alertForm.state} onChange={(value) => setAlertForm((current) => ({ ...current, state: value }))} options={Object.keys(STATES_DISTRICTS)} /></div>
-            <button className="primary-action" onClick={addAlert}>Add Alert</button>
+            <button className="primary-action" onClick={addAlert}>{t("addAlert")}</button>
           </article>
           <article className="panel">
-            <div className="panel-title"><Bell /><h2>Active Alerts ({alerts.length})</h2></div>
+            <div className="panel-title"><Bell /><h2>{t("activeAlerts")} ({alerts.length})</h2></div>
             <div className="history-list">{alerts.length === 0 ? <p className="muted">No alerts yet.</p> : alerts.map((alert) => <div key={alert.id}><span>{alert.crop}</span><strong>{alert.condition === "above" ? "Rises above" : "Falls below"} {formatINR(alert.threshold)}/q</strong><small>{alert.state || "All India"} · {alert.createdAt}</small><button onClick={() => setAlerts((current) => current.filter((item) => item.id !== alert.id))}><Trash2 /> Remove</button></div>)}</div>
           </article>
         </section>
 
         <section className={`grid two ${activeTab !== "health" ? "tab-hidden" : ""}`} id="health">
           <article className="panel">
-            <div className="panel-title"><Camera /><h2>Crop Photo Health Predictor</h2></div>
-            <div className="form-grid"><CropField label="Crop name" value={healthCrop} onChange={setHealthCrop} /><label className="field"><span>Upload crop photo</span><input type="file" accept="image/*" onChange={(event) => onHealthPhoto(event.target.files?.[0])} /></label></div>
+            <div className="panel-title"><Camera /><h2>{t("healthTitle")}</h2></div>
+            <p className="muted">{t("healthHelp")}</p>
+            <div className="form-grid"><CropField label={t("cropName")} value={healthCrop} onChange={setHealthCrop} /><label className="field"><span>{t("uploadPhoto")}</span><input type="file" accept="image/*" onChange={(event) => onHealthPhoto(event.target.files?.[0])} /></label></div>
             {healthPreview && <img className="photo-preview" src={healthPreview} alt="Uploaded crop" />}
             <div className="chips">{["Yellow leaves", "Dry soil", "Slow growth", "White spots"].map((symptom) => <button key={symptom} className={symptoms.includes(symptom) ? "active" : ""} onClick={() => setSymptoms((current) => current.includes(symptom) ? current.filter((item) => item !== symptom) : [...current, symptom])}>{symptom}</button>)}</div>
           </article>
-          <article className="panel"><div className="panel-title"><ShieldCheck /><h2>Health Result</h2></div><div className="guidance"><strong>{health.issue}</strong><span>{health.fertilizer}</span><p>{health.advice} {health.prevention}</p></div>{healthPhoto && <div className="model-list"><div><span>Local photo scan</span><strong>{symptoms.join(", ")}</strong></div><div><span>File</span><strong>{healthPhoto.name}</strong></div></div>}<p className="muted">The photo scan runs locally using color signals. A production app can replace this with a secure backend vision model.</p></article>
+          <article className="panel"><div className="panel-title"><ShieldCheck /><h2>{t("healthResult")}</h2></div><div className="guidance"><strong>{health.issue}</strong><span>{health.fertilizer}</span><p>{health.advice} {health.prevention}</p></div>{healthPhoto && <div className="model-list"><div><span>{t("localPhotoScan")}</span><strong>{symptoms.join(", ")}</strong></div><div><span>{t("file")}</span><strong>{healthPhoto.name}</strong></div></div>}<p className="muted">{t("healthNote")}</p></article>
         </section>
 
         <section className={`grid two ${activeTab !== "history" ? "tab-hidden" : ""}`} id="history">
@@ -731,3 +733,8 @@ Confidence: ${prediction.confidence}%`;
         </section>
       </section>
       {shareOpen && <ShareSheet text={shareText} onClose={() => setShareOpen(false)} />}
+    </main>
+  );
+}
+
+createRoot(document.getElementById("root")).render(<App />);

@@ -765,4 +765,16 @@ input[type="range"] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .topbar, .hero-grid, .stats-row, .profit-strip, .form-grid, .
+  .topbar, .hero-grid, .stats-row, .profit-strip, .form-grid, .cost-grid, .alert-form, .share-actions {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  h1 {
+    font-size: 2.1rem;
+  }
+
+  .price-tag strong {
+    font-size: 2.15rem;
+  }
+}
