@@ -95,6 +95,56 @@ function textHash(text) {
   return Array.from(String(text || "")).reduce((sum, char) => sum + char.charCodeAt(0), 0);
 }
 
+const stateClimate = {
+  Maharashtra: { temperature: 30, humidity: 60, rainfall: 42, condition: "Warm and partly cloudy" },
+  Karnataka: { temperature: 28, humidity: 64, rainfall: 55, condition: "Mild with broken clouds" },
+  Telangana: { temperature: 32, humidity: 55, rainfall: 36, condition: "Hot and dry" },
+  Gujarat: { temperature: 33, humidity: 50, rainfall: 28, condition: "Dry heat" },
+  Rajasthan: { temperature: 35, humidity: 38, rainfall: 16, condition: "Hot and dry" },
+  Kerala: { temperature: 29, humidity: 78, rainfall: 82, condition: "Humid with showers" },
+  "Tamil Nadu": { temperature: 31, humidity: 70, rainfall: 48, condition: "Humid and warm" },
+  Punjab: { temperature: 29, humidity: 52, rainfall: 32, condition: "Clear and breezy" },
+  Haryana: { temperature: 30, humidity: 50, rainfall: 30, condition: "Clear and dry" },
+  "Uttar Pradesh": { temperature: 31, humidity: 58, rainfall: 38, condition: "Warm with haze" },
+  Bihar: { temperature: 30, humidity: 66, rainfall: 54, condition: "Humid and cloudy" },
+  "West Bengal": { temperature: 30, humidity: 74, rainfall: 70, condition: "Humid with thunder risk" },
+  Odisha: { temperature: 31, humidity: 72, rainfall: 76, condition: "Coastal humidity" },
+  Assam: { temperature: 28, humidity: 80, rainfall: 88, condition: "Heavy cloud cover" },
+  Delhi: { temperature: 32, humidity: 44, rainfall: 18, condition: "Hot with haze" },
+};
+
+function seasonClimate(season) {
+  if (season === "Kharif") return { temperature: 1, humidity: 8, rainfall: 28 };
+  if (season === "Rabi") return { temperature: -4, humidity: -8, rainfall: -18 };
+  return { temperature: 4, humidity: -2, rainfall: -8 };
+}
+
+export function getCityWeather({ state, region, season }) {
+  const base = stateClimate[state] ?? { temperature: 29, humidity: 62, rainfall: 44, condition: "Mixed farm weather" };
+  const seasonal = seasonClimate(season);
+  const hash = textHash(`${state}-${region}`);
+  const coastalBoost = ["Mumbai", "Kochi", "Chennai", "Kolkata", "Visakhapatnam", "Thiruvananthapuram", "Puri"].includes(region) ? 9 : 0;
+  const plateauDryness = ["Pune", "Nashik", "Nagpur", "Bhopal", "Indore", "Jaipur"].includes(region) ? -8 : 0;
+  const rainfall = Math.round(clamp(base.rainfall + seasonal.rainfall + (hash % 21) - 10 + coastalBoost + plateauDryness, 0, 150));
+  const humidity = Math.round(clamp(base.humidity + seasonal.humidity + (hash % 13) - 6 + Math.round(coastalBoost / 2), 20, 95));
+  const temperature = Math.round(clamp(base.temperature + seasonal.temperature + (hash % 9) - 4 - Math.round(coastalBoost / 5), 12, 44));
+  const wind = Math.round(clamp(7 + (hash % 18) + rainfall / 18, 4, 32));
+  const condition = rainfall > 85 ? "Heavy rain risk" : rainfall > 55 ? "Showers likely" : humidity > 74 ? "Humid and cloudy" : temperature > 34 ? "Hot and dry" : base.condition;
+
+  return {
+    temperature,
+    humidity,
+    rainfall,
+    wind,
+    condition,
+    advisory: rainfall > 85
+      ? "Delay spraying and check drainage before irrigation."
+      : rainfall < 20
+        ? "Plan irrigation and mulch to protect soil moisture."
+        : "Weather is suitable for normal field operations.",
+  };
+}
+
 function fallbackCropProfile(crop) {
   const hash = textHash(crop);
   return {

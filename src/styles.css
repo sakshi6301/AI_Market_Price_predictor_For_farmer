@@ -81,6 +81,31 @@ button, input, select {
   font-weight: 700;
 }
 
+.form-success {
+  background: #e6f6df;
+  border: 1px solid #a9df98;
+  color: #176329;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.auth-switch {
+  text-align: center;
+  color: #627066;
+  font-size: 0.92rem;
+}
+
+.auth-switch button {
+  border: 0;
+  background: transparent;
+  color: #153723;
+  cursor: pointer;
+  font-weight: 900;
+  padding: 4px 6px;
+}
+
 .app {
   min-height: 100vh;
   display: grid;
@@ -275,6 +300,14 @@ h2 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.predict-layout {
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+}
+
+.compare-layout {
+  grid-template-columns: minmax(280px, 0.55fr) minmax(0, 1fr);
+}
+
 .panel {
   background: #ffffff;
   border: 1px solid #dde6d8;
@@ -294,10 +327,18 @@ h2 {
   color: #2f8f46;
 }
 
+.compact-title {
+  margin-bottom: 12px;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+
+.compact-form {
+  gap: 10px;
 }
 
 .field, .cost-grid label {
@@ -366,9 +407,36 @@ input[type="range"] {
   background: #203729;
 }
 
+.dark .forecast-strip,
+.dark .compare-metrics b {
+  background: #111916;
+  color: #eef7ef;
+}
+
+.dark .forecast-strip strong {
+  color: #eef7ef;
+}
+
 .price-tag strong {
   font-size: 2.7rem;
   line-height: 1;
+}
+
+.forecast-strip {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f6f9f3;
+  color: #526157;
+  font-weight: 800;
+}
+
+.forecast-strip strong {
+  color: #153723;
+  font-size: 1.35rem;
 }
 
 .stat {
@@ -460,6 +528,75 @@ input[type="range"] {
 .compare-card p {
   color: #526157;
   line-height: 1.5;
+}
+
+.decision-banner {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 8px;
+  background: #153723;
+  color: #ffffff;
+  display: grid;
+  gap: 4px;
+}
+
+.decision-banner span,
+.decision-banner small {
+  color: #b9d7c0;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.decision-banner strong {
+  font-size: 1.7rem;
+}
+
+.compact-compare .compare-card {
+  gap: 10px;
+}
+
+.compare-head,
+.compare-metrics {
+  width: 100%;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.compare-head strong {
+  font-size: 1.4rem;
+}
+
+.compare-head span {
+  color: #153723;
+  background: #dff0ff;
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 0.85rem;
+}
+
+.compare-metrics b {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #17211a;
+  font-size: 0.9rem;
+}
+
+.score-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: #dbe6d8;
+  overflow: hidden;
+}
+
+.score-track span {
+  display: block;
+  height: 100%;
+  background: #2f8f46;
 }
 
 .weather-card {
@@ -573,6 +710,8 @@ input[type="range"] {
   padding: 14px;
   border-radius: 8px;
   background: #eef4f5;
+  min-height: 150px;
+  align-content: start;
 }
 
 .dark .chat-box {
@@ -584,6 +723,46 @@ input[type="range"] {
   background: #153723;
   color: #ffffff;
   border-color: #153723;
+}
+
+.chat-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.chat-input input {
+  min-height: 42px;
+  border: 1px solid #cfdccc;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #fbfdf9;
+  color: inherit;
+}
+
+.chat-input button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 12px;
+  background: #153723;
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.profile-form {
+  display: grid;
+  gap: 12px;
+}
+
+.plain-button.compact {
+  width: 100%;
+  margin-top: 12px;
 }
 
 .alert-banner, .offline-strip {
@@ -747,7 +926,7 @@ input[type="range"] {
     display: none;
   }
 
-  .grid.two, .grid.three, .hero-panel {
+  .grid.two, .grid.three, .hero-panel, .predict-layout, .compare-layout {
     grid-template-columns: 1fr;
   }
 }
@@ -765,7 +944,7 @@ input[type="range"] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .topbar, .hero-grid, .stats-row, .profit-strip, .form-grid, .cost-grid, .alert-form, .share-actions {
+  .topbar, .hero-grid, .stats-row, .profit-strip, .form-grid, .cost-grid, .alert-form, .share-actions, .forecast-strip {
     grid-template-columns: 1fr;
     display: grid;
   }

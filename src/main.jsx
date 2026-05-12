@@ -13,7 +13,6 @@ import {
   LineChart,
   LogIn,
   LogOut,
-  MapPin,
   Mic,
   Scale,
   Send,
@@ -24,7 +23,7 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
-import { buildTrend, compareCities, compareCropChoices, diagnoseHealth, predictPrice, recommendCrops, crops } from "./mlEngine.js";
+import { buildTrend, compareCropChoices, diagnoseHealth, getCityWeather, predictPrice, recommendCrops, crops } from "./mlEngine.js";
 import "./styles.css";
 
 const STATES_DISTRICTS = {
@@ -328,8 +327,13 @@ const ALL_CROPS = Object.keys(crops);
 const soilOptions = ["Black soil", "Red soil", "Alluvial soil", "Sandy soil", "Clay soil"];
 const seasonOptions = ["Kharif", "Rabi", "Zaid"];
 const farmSizes = ["< 1 acre", "1-2 acres", "2-5 acres", "5-10 acres", "10+ acres"];
-const defaultUser = { name: "Farmer", mobile: "", email: "demo@farm.ai", state: "Maharashtra", district: "Pune", farmSize: "2-5 acres", lang: "en", notifications: true };
+const defaultUser = { name: "Farmer", mobile: "", email: "demo@farm.ai", password: "demo123", state: "Maharashtra", district: "Pune", farmSize: "2-5 acres", lang: "en", notifications: true };
 const initialInput = { crop: "Tomato", soil: "Red soil", temperature: 29, humidity: 62, rainfall: 48, state: "Maharashtra", region: "Pune", season: "Zaid", forecastDays: 5, yieldQty: 11 };
+
+function inputWithWeather(input) {
+  const weather = getCityWeather(input);
+  return { ...input, temperature: weather.temperature, humidity: weather.humidity, rainfall: weather.rainfall };
+}
 
 function formatINR(value) {
   return `Rs ${Number(value || 0).toLocaleString("en-IN")}`;
@@ -407,11 +411,18 @@ function TrendChart({ values }) {
 
 function AuthScreen({ onAuth }) {
   const [mode, setMode] = useState("login");
-  const [form, setForm] = useState({ name: "", email: "demo@farm.ai", mobile: "", password: "", state: "Maharashtra", district: "Pune", farmSize: "2-5 acres", lang: "en" });
+  const [form, setForm] = useState({ name: "", email: "demo@farm.ai", mobile: "", password: "demo123", state: "Maharashtra", district: "Pune", farmSize: "2-5 acres", lang: "en" });
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   function update(key, value) {
     setForm((current) => key === "state" ? { ...current, state: value, district: STATES_DISTRICTS[value][0] } : { ...current, [key]: value });
+  }
+
+  function switchMode(nextMode) {
+    setMode(nextMode);
+    setError("");
+    setSuccess("");
   }
 
   function submit(event) {
@@ -421,14 +432,22 @@ function AuthScreen({ onAuth }) {
       return;
     }
     const users = readStored("farm-users", []);
+    const availableUsers = users.some((item) => item.email === defaultUser.email) ? users : [defaultUser, ...users];
     if (mode === "register") {
       const user = { ...defaultUser, ...form, name: form.name || "Farmer", createdAt: new Date().toISOString() };
-      writeStored("farm-users", [user, ...users.filter((item) => item.email !== user.email)]);
-      writeStored("farm-session", user);
-      onAuth(user);
+      writeStored("farm-users", [user, ...availableUsers.filter((item) => item.email !== user.email)]);
+      setMode("login");
+      setError("");
+      setSuccess("Registration successful. Please login with your account.");
+      setForm((current) => ({ ...current, password: "" }));
       return;
     }
-    const found = users.find((item) => item.email === form.email) ?? { ...defaultUser, email: form.email, lang: form.lang };
+    const found = availableUsers.find((item) => (item.email === form.email || item.mobile === form.email) && item.password === form.password);
+    if (!found) {
+      setSuccess("");
+      setError("Account not found. Please register first or check your password.");
+      return;
+    }
     writeStored("farm-session", found);
     onAuth(found);
   }
@@ -438,8 +457,8 @@ function AuthScreen({ onAuth }) {
       <section className="auth-panel">
         <div className="brand auth-brand"><Leaf /><div><strong>AI Market Price Predictor</strong><span>Secure farmer workspace</span></div></div>
         <div className="auth-tabs">
-          <button className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}><LogIn /> Login</button>
-          <button className={mode === "register" ? "active" : ""} onClick={() => setMode("register")}><UserPlus /> Register</button>
+          <button className={mode === "login" ? "active" : ""} onClick={() => switchMode("login")}><LogIn /> Login</button>
+          <button className={mode === "register" ? "active" : ""} onClick={() => switchMode("register")}><UserPlus /> Register</button>
         </div>
         <form onSubmit={submit} className="auth-form">
           {mode === "register" && <TextField label="Name" value={form.name} placeholder="Farmer name" onChange={(value) => update("name", value)} />}
@@ -460,7 +479,13 @@ function AuthScreen({ onAuth }) {
             </div>
           )}
           {error && <div className="form-error">{error}</div>}
+          {success && <div className="form-success">{success}</div>}
           <button className="primary-action" type="submit">{mode === "login" ? "Login" : "Create account"}</button>
+          {mode === "login" ? (
+            <p className="auth-switch">Don't have an account? <button type="button" onClick={() => switchMode("register")}>Register</button></p>
+          ) : (
+            <p className="auth-switch">Already have an account? <button type="button" onClick={() => switchMode("login")}>Login</button></p>
+          )}
         </form>
       </section>
     </main>
@@ -508,7 +533,7 @@ function ShareSheet({ text, onClose }) {
 
 function App() {
   const [user, setUser] = useState(() => readStored("farm-session", null));
-  const [input, setInput] = useState(() => readStored("market-input", initialInput));
+  const [input, setInput] = useState(() => inputWithWeather(readStored("market-input", initialInput)));
   const [language, setLanguage] = useState(() => readStored("market-language", user?.lang ?? "en"));
   const [activeTab, setActiveTab] = useState("dashboard");
   const [theme, setTheme] = useState("light");
@@ -523,6 +548,10 @@ function App() {
   const [healthPhoto, setHealthPhoto] = useState(null);
   const [healthPreview, setHealthPreview] = useState("");
   const [symptoms, setSymptoms] = useState(["Yellow leaves"]);
+  const [profileForm, setProfileForm] = useState(() => readStored("farm-session", defaultUser) || defaultUser);
+  const [chatInput, setChatInput] = useState("");
+  const [chatMessages, setChatMessages] = useState([]);
+  const [voiceStatus, setVoiceStatus] = useState("");
 
   const copy = UI[language] ?? UI.en;
   const t = (key) => copy[key] ?? UI.en[key] ?? key;
@@ -536,9 +565,9 @@ function App() {
     { id: "profile", label: t("profile"), icon: ShieldCheck },
   ];
   const districtOptions = STATES_DISTRICTS[input.state] ?? [];
+  const weather = useMemo(() => getCityWeather(input), [input.state, input.region, input.season]);
   const prediction = useMemo(() => predictPrice(input), [input]);
   const trend = useMemo(() => buildTrend(input.crop, input.region), [input.crop, input.region]);
-  const cityPrices = useMemo(() => compareCities(input.crop), [input.crop]);
   const recommendations = useMemo(() => recommendCrops(input), [input]);
   const comparison = useMemo(() => compareCropChoices(input, compare.cropA, compare.cropB), [input, compare]);
   const health = useMemo(() => diagnoseHealth(symptoms, healthCrop, healthPhoto), [symptoms, healthCrop, healthPhoto]);
@@ -555,6 +584,7 @@ function App() {
   const shareText = `${input.crop} forecast for ${input.region}, ${input.state}
 Predicted: ${formatINR(prediction.predicted)}/quintal
 Current: ${formatINR(prediction.current)}/quintal
+Weather: ${weather.condition}, ${weather.temperature}C, ${weather.humidity}% humidity, ${weather.rainfall}mm rain
 Demand: ${prediction.demand}
 Risk: ${prediction.risk}
 Sell guidance: ${prediction.sellingWindow}
@@ -564,14 +594,22 @@ Confidence: ${prediction.confidence}%`;
   useEffect(() => writeStored("market-language", language), [language]);
   useEffect(() => writeStored("price-alerts", alerts), [alerts]);
   useEffect(() => writeStored("prediction-history", history), [history]);
+  useEffect(() => {
+    if (user) setProfileForm(user);
+  }, [user]);
 
   if (!user) return <AuthScreen onAuth={(nextUser) => { setUser(nextUser); setLanguage(nextUser.lang || "en"); }} />;
 
   function updateInput(key, value) {
     setInput((current) => {
-      if (key === "state") return { ...current, state: value, region: STATES_DISTRICTS[value][0] };
+      if (key === "state") return inputWithWeather({ ...current, state: value, region: STATES_DISTRICTS[value][0] });
+      if (key === "region" || key === "season") return inputWithWeather({ ...current, [key]: value });
       return { ...current, [key]: value };
     });
+  }
+
+  function syncWeather() {
+    setInput((current) => inputWithWeather(current));
   }
 
   function savePrediction() {
@@ -582,6 +620,43 @@ Confidence: ${prediction.confidence}%`;
   function addAlert() {
     const threshold = Math.max(1, Number(alertForm.threshold) || 0);
     setAlerts((current) => [{ id: Date.now(), crop: alertForm.crop || input.crop, condition: alertForm.condition, threshold, state: alertForm.state, createdAt: new Date().toLocaleDateString() }, ...current]);
+  }
+
+  function saveProfile(event) {
+    event.preventDefault();
+    const nextUser = { ...user, ...profileForm };
+    const users = readStored("farm-users", []);
+    writeStored("farm-users", [nextUser, ...users.filter((item) => item.email !== nextUser.email)]);
+    writeStored("farm-session", nextUser);
+    setUser(nextUser);
+    setLanguage(nextUser.lang || "en");
+    setInput((current) => inputWithWeather({ ...current, state: nextUser.state, region: nextUser.district }));
+  }
+
+  function sendChat(message = chatInput) {
+    const question = String(message || "").trim();
+    if (!question) return;
+    const answer = `${prediction.sellingWindow} for ${input.crop} in ${input.region}. Current model price is ${formatINR(prediction.predicted)}/q with ${prediction.demand.toLowerCase()} demand, ${prediction.risk.toLowerCase()} risk, and ${weather.condition.toLowerCase()} weather. ${weather.advisory}`;
+    setChatMessages((current) => [...current, { role: "Farmer", text: question }, { role: "Assistant", text: answer }].slice(-8));
+    setChatInput("");
+  }
+
+  function startVoiceInput() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setVoiceStatus("Speech input is not available in this browser. Type the crop or city in the fields above.");
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = language === "hi" ? "hi-IN" : "en-IN";
+    recognition.onstart = () => setVoiceStatus("Listening...");
+    recognition.onerror = () => setVoiceStatus("Could not hear clearly. Try again.");
+    recognition.onresult = (event) => {
+      const transcript = event.results?.[0]?.[0]?.transcript || "";
+      setVoiceStatus(transcript);
+      sendChat(transcript);
+    };
+    recognition.start();
   }
 
   async function onHealthPhoto(file) {
@@ -654,43 +729,59 @@ Confidence: ${prediction.confidence}%`;
           <div className="hero-grid"><Stat label={t("risk")} value={prediction.risk} tone={prediction.risk === "High" ? "risk" : "profit"} /><Stat label={t("demand")} value={prediction.demand} tone="warning" /><Stat label={t("cropFit")} value={`${prediction.cropFit}%`} tone="info" /></div>
         </section>
 
-        <section className={`grid two ${activeTab !== "prediction" ? "tab-hidden" : ""}`} id="prediction">
-          <article className="panel">
-            <div className="panel-title"><Sprout /><h2>{t("pricePrediction")}</h2></div>
-            <div className="form-grid">
-              <CropField label={t("crop")} value={input.crop} onChange={(value) => updateInput("crop", value)} />
-              <SelectField label={t("state")} value={input.state} onChange={(value) => updateInput("state", value)} options={Object.keys(STATES_DISTRICTS)} />
-              <SelectField label={t("district")} value={input.region} onChange={(value) => updateInput("region", value)} options={districtOptions} />
-              <SelectField label={t("season")} value={input.season} onChange={(value) => updateInput("season", value)} options={seasonOptions} />
-              <SelectField label={t("soil")} value={input.soil} onChange={(value) => updateInput("soil", value)} options={soilOptions} />
-              <NumberField label={t("temperature")} value={input.temperature} min={12} max={44} unit="C" onChange={(value) => updateInput("temperature", value)} />
-              <NumberField label={t("humidity")} value={input.humidity} min={20} max={95} unit="%" onChange={(value) => updateInput("humidity", value)} />
-              <NumberField label={t("rainfall")} value={input.rainfall} min={0} max={140} unit="mm" onChange={(value) => updateInput("rainfall", value)} />
-              <NumberField label={t("forecast")} value={input.forecastDays} min={1} max={15} unit="d" onChange={(value) => updateInput("forecastDays", value)} />
-              <NumberField label={t("expectedYield")} value={input.yieldQty} min={1} max={120} unit="q" onChange={(value) => updateInput("yieldQty", value)} />
+        <section className={`grid predict-layout ${activeTab !== "prediction" ? "tab-hidden" : ""}`} id="prediction">
+          <article className="panel predict-controls">
+            <div className="panel-title compact-title"><Sprout /><h2>{t("pricePrediction")}</h2></div>
+            <div className="form-grid compact-form">
+              <CropField label="Crop" value={input.crop} onChange={(value) => updateInput("crop", value)} />
+              <SelectField label="State" value={input.state} onChange={(value) => updateInput("state", value)} options={Object.keys(STATES_DISTRICTS)} />
+              <SelectField label="City" value={input.region} onChange={(value) => updateInput("region", value)} options={districtOptions} />
+              <SelectField label="Season" value={input.season} onChange={(value) => updateInput("season", value)} options={seasonOptions} />
+              <SelectField label="Soil" value={input.soil} onChange={(value) => updateInput("soil", value)} options={soilOptions} />
+              <NumberField label="Temp" value={input.temperature} min={12} max={44} unit="C" onChange={(value) => updateInput("temperature", value)} />
+              <NumberField label="Humidity" value={input.humidity} min={20} max={95} unit="%" onChange={(value) => updateInput("humidity", value)} />
+              <NumberField label="Rain" value={input.rainfall} min={0} max={140} unit="mm" onChange={(value) => updateInput("rainfall", value)} />
+              <NumberField label="Days" value={input.forecastDays} min={1} max={15} unit="d" onChange={(value) => updateInput("forecastDays", value)} />
+              <NumberField label="Yield" value={input.yieldQty} min={1} max={120} unit="q" onChange={(value) => updateInput("yieldQty", value)} />
             </div>
           </article>
           <article className="panel result-panel">
-            <div className="price-tag"><span>{t("predictedPrice")}</span><strong>{formatINR(prediction.predicted)}</strong><small>{t("perQuintal")}</small></div>
+            <div className="price-tag"><span>{input.crop} - {input.region}</span><strong>{formatINR(prediction.predicted)}</strong><small>{prediction.sellingWindow}</small></div>
             <div className="stats-row"><Stat label={t("current")} value={formatINR(prediction.current)} /><Stat label={t("change")} value={`${prediction.change}%`} tone={prediction.change >= 0 ? "profit" : "risk"} /><Stat label={t("confidence")} value={`${prediction.confidence}%`} /></div>
-            <div className="model-list">{prediction.models.map((model) => <div key={model.name}><span>{model.name}</span><strong>{formatINR(model.value)}</strong></div>)}</div>
+            <div className="forecast-strip">
+              <span>{weather.condition}</span>
+              <strong>{weather.temperature}C</strong>
+              <span>{weather.rainfall}mm rain</span>
+            </div>
           </article>
         </section>
 
-        <section className={`grid three ${activeTab !== "dashboard" ? "tab-hidden" : ""}`}>
-          <article className="panel"><div className="panel-title"><CloudSun /><h2>{t("weather")}</h2></div><div className="weather-card"><strong>{input.temperature}C</strong><span>{input.humidity}%</span><span>{input.rainfall}mm</span></div><p className="muted">{input.rainfall > 75 ? t("highRain") : t("noSevereRain")}</p></article>
-          <article className="panel"><div className="panel-title"><MapPin /><h2>{t("mandiComparison")}</h2></div><div className="city-list">{cityPrices.slice(0, 6).map((item, index) => <div key={item.city}><span>{index === 0 ? t("best") : item.city}</span><strong>{item.city}: {formatINR(item.price)}</strong></div>)}</div></article>
+        <section className={`grid two dashboard-grid ${activeTab !== "dashboard" ? "tab-hidden" : ""}`}>
+          <article className="panel">
+            <div className="panel-title"><CloudSun /><h2>{t("weather")} - {input.region}</h2></div>
+            <div className="weather-card">
+              <strong>{weather.temperature}C</strong>
+              <span>{weather.condition}</span>
+              <span>{weather.humidity}% humidity - {weather.rainfall}mm rain - {weather.wind} km/h wind</span>
+            </div>
+            <p className="muted">{weather.advisory}</p>
+            <button className="plain-button compact" onClick={syncWeather}>Apply this city weather to prediction</button>
+          </article>
           <article className="panel"><div className="panel-title"><Leaf /><h2>{t("recommendedCrops")}</h2></div><div className="recommend-list">{recommendations.map((item) => <div key={item.name}><strong>{item.name}</strong><span>{item.score}%</span><small>{item.reason}</small></div>)}</div></article>
         </section>
 
-        <section className={`grid two ${activeTab !== "compare" ? "tab-hidden" : ""}`} id="compare">
-          <article className="panel">
-            <div className="panel-title"><Scale /><h2>{t("compareTitle")}</h2></div>
-            <p className="muted">{t("compareHelp")}</p>
-            <div className="form-grid"><CropField label="Crop A" value={compare.cropA} onChange={(value) => setCompare((current) => ({ ...current, cropA: value }))} /><CropField label="Crop B" value={compare.cropB} onChange={(value) => setCompare((current) => ({ ...current, cropB: value }))} /></div>
+        <section className={`grid compare-layout ${activeTab !== "compare" ? "tab-hidden" : ""}`} id="compare">
+          <article className="panel compare-controls">
+            <div className="panel-title compact-title"><Scale /><h2>Compare</h2></div>
+            <div className="form-grid compact-form"><CropField label="Crop A" value={compare.cropA} onChange={(value) => setCompare((current) => ({ ...current, cropA: value }))} /><CropField label="Crop B" value={compare.cropB} onChange={(value) => setCompare((current) => ({ ...current, cropB: value }))} /></div>
+            <div className="decision-banner">
+              <span>Best choice</span>
+              <strong>{comparison[0]?.crop}</strong>
+              <small>{input.region} - {input.season} - {input.soil}</small>
+            </div>
           </article>
           <article className="panel">
-            <div className="compare-list">{comparison.map((item, index) => <div className={index === 0 ? "compare-card winner" : "compare-card"} key={item.crop}><span>{index === 0 ? t("recommended") : t("alternative")}</span><strong>{item.crop}</strong><p>{formatINR(item.predicted)}/q · {item.fit}% {t("cropFit")} · {item.demand} {t("demand")} · {item.risk} {t("risk")}</p><small>{item.reason}</small><div className="score-track"><span style={{ width: `${item.score}%` }} /></div></div>)}</div>
+            <div className="compare-list compact-compare">{comparison.map((item) => <div className={item.crop === comparison[0]?.crop ? "compare-card winner" : "compare-card"} key={item.crop}><div className="compare-head"><strong>{item.crop}</strong><span>{item.score}/100</span></div><div className="compare-metrics"><b>{formatINR(item.predicted)}/q</b><b>{formatINR(item.projectedReturn)} return</b><b>{item.risk} risk</b></div><small>{item.fit}% fit - {item.demand} demand - {item.reason}</small><div className="score-track"><span style={{ width: `${item.score}%` }} /></div></div>)}</div>
           </article>
         </section>
 
@@ -718,18 +809,18 @@ Confidence: ${prediction.confidence}%`;
         </section>
 
         <section className={`grid two ${activeTab !== "history" ? "tab-hidden" : ""}`} id="history">
-          <article className="panel"><div className="panel-title"><LineChart /><h2>Historical Analytics</h2></div><TrendChart values={trend} /></article>
+          <article className="panel"><div className="panel-title"><LineChart /><h2>{t("historicalAnalytics")}</h2></div><TrendChart values={trend} /></article>
           <article className="panel"><div className="panel-title"><History /><h2>Prediction History</h2></div><div className="history-list">{history.length === 0 ? <p className="muted">Save predictions to compare them later with the current situation.</p> : history.map((item) => <div key={item.id}><span>{item.savedAt}</span><strong>{item.input.crop}: {formatINR(item.prediction.predicted)}/q</strong><small>{item.input.region}, {item.input.state} · Current now: {item.input.crop === input.crop ? formatINR(prediction.predicted) : "select same crop to compare"}</small><button onClick={() => setHistory((current) => current.filter((entry) => entry.id !== item.id))}><Trash2 /> Delete</button></div>)}</div></article>
         </section>
 
         <section className={`grid three ${activeTab !== "profile" ? "tab-hidden" : ""}`}>
-          <article className="panel"><div className="panel-title"><Calculator /><h2>Profit Calculator</h2></div><div className="cost-grid">{Object.entries(costs).map(([key, value]) => <label key={key}><span>{key}</span><input type="number" min="0" value={value} onChange={(event) => setCosts((current) => ({ ...current, [key]: Math.max(0, Number(event.target.value) || 0) }))} /></label>)}</div><div className="profit-strip"><Stat label="Investment" value={formatINR(investment)} /><Stat label="Return" value={formatINR(expectedReturn)} /><Stat label="Profit" value={formatINR(profit)} tone={profit > 0 ? "profit" : "risk"} /></div></article>
-          <article className="panel"><div className="panel-title"><Bot /><h2>AI Chatbot</h2></div><div className="chat-box"><p>Farmer: Should I sell {input.crop}?</p><strong>Assistant: {prediction.sellingWindow}. Demand is {prediction.demand.toLowerCase()} and risk is {prediction.risk.toLowerCase()}.</strong></div></article>
-          <article className="panel" id="profile"><div className="panel-title"><Users /><h2>Profile</h2></div><div className="model-list"><div><span>Name</span><strong>{user.name}</strong></div><div><span>Location</span><strong>{user.district}, {user.state}</strong></div><div><span>Farm size</span><strong>{user.farmSize}</strong></div><div><span>Language</span><strong>{LANGS[language]?.name}</strong></div></div></article>
+          <article className="panel"><div className="panel-title"><Calculator /><h2>{t("profitCalculator")}</h2></div><div className="cost-grid">{Object.entries(costs).map(([key, value]) => <label key={key}><span>{key}</span><input type="number" min="0" value={value} onChange={(event) => setCosts((current) => ({ ...current, [key]: Math.max(0, Number(event.target.value) || 0) }))} /></label>)}</div><div className="profit-strip"><Stat label={t("investment")} value={formatINR(investment)} /><Stat label={t("return")} value={formatINR(expectedReturn)} /><Stat label={t("profit")} value={formatINR(profit)} tone={profit > 0 ? "profit" : "risk"} /></div></article>
+          <article className="panel"><div className="panel-title"><Bot /><h2>{t("chatbot")}</h2></div><div className="chat-box">{chatMessages.length === 0 ? <><p>Farmer: Should I sell {input.crop}?</p><strong>Assistant: {prediction.sellingWindow}. Demand is {prediction.demand.toLowerCase()}, risk is {prediction.risk.toLowerCase()}, and {input.region} weather is {weather.condition.toLowerCase()}.</strong></> : chatMessages.map((item, index) => <p key={index}><strong>{item.role}:</strong> {item.text}</p>)}</div><div className="chat-input"><input value={chatInput} placeholder={`Ask about ${input.crop} in ${input.region}`} onChange={(event) => setChatInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") sendChat(); }} /><button onClick={() => sendChat()}><Send /> Send</button></div></article>
+          <article className="panel" id="profile"><div className="panel-title"><Users /><h2>{t("profile")}</h2></div><form className="profile-form" onSubmit={saveProfile}><TextField label={t("name")} value={profileForm.name || ""} onChange={(value) => setProfileForm((current) => ({ ...current, name: value }))} /><SelectField label={t("state")} value={profileForm.state || input.state} onChange={(value) => setProfileForm((current) => ({ ...current, state: value, district: STATES_DISTRICTS[value][0] }))} options={Object.keys(STATES_DISTRICTS)} /><SelectField label={t("district")} value={profileForm.district || input.region} onChange={(value) => setProfileForm((current) => ({ ...current, district: value }))} options={STATES_DISTRICTS[profileForm.state || input.state]} /><SelectField label={t("farmSize")} value={profileForm.farmSize || farmSizes[1]} onChange={(value) => setProfileForm((current) => ({ ...current, farmSize: value }))} options={farmSizes} /><SelectField label={t("language")} value={profileForm.lang || language} onChange={(value) => setProfileForm((current) => ({ ...current, lang: value }))} options={Object.keys(LANGS)} /><button className="primary-action" type="submit">{t("save")}</button></form></article>
         </section>
 
         <section className={`grid three ${activeTab !== "profile" ? "tab-hidden" : ""}`} id="community">
-          <article className="panel"><div className="panel-title"><Mic /><h2>Voice Input</h2></div><button className="voice-button">Predict {input.crop} price in {input.region}</button><p className="muted">Ready for mobile speech-to-text integration.</p></article>
+          <article className="panel"><div className="panel-title"><Mic /><h2>{t("voiceInput")}</h2></div><button className="voice-button" onClick={startVoiceInput}>Predict {input.crop} price in {input.region}</button><p className="muted">{voiceStatus || t("voiceReady")}</p></article>
         </section>
       </section>
       {shareOpen && <ShareSheet text={shareText} onClose={() => setShareOpen(false)} />}
