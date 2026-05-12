@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Bell,
-  Bot,
   Camera,
   Calculator,
   CloudSun,
@@ -13,7 +12,6 @@ import {
   LineChart,
   LogIn,
   LogOut,
-  Mic,
   Scale,
   Send,
   ShieldCheck,
@@ -23,72 +21,14 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
+import { STATES_DISTRICTS } from "./locationData.js";
 import { buildTrend, compareCropChoices, diagnoseHealth, getCityWeather, predictPrice, recommendCrops, crops } from "./mlEngine.js";
 import "./styles.css";
 
-const STATES_DISTRICTS = {
-  "Andhra Pradesh": ["Alluri Sitharama Raju", "Anakapalli", "Anantapur", "Bapatla", "Chittoor", "East Godavari", "Eluru", "Guntur", "Kakinada", "Krishna", "Kurnool", "Nandyal", "Nellore", "Palnadu", "Prakasam", "Sri Sathya Sai", "Srikakulam", "Tirupati", "Visakhapatnam", "Vizianagaram", "West Godavari", "YSR Kadapa"],
-  "Arunachal Pradesh": ["Anjaw", "Changlang", "East Kameng", "East Siang", "Itanagar Capital Complex", "Kamle", "Kurung Kumey", "Lohit", "Longding", "Lower Dibang Valley", "Lower Siang", "Lower Subansiri", "Namsai", "Pakke Kessang", "Papum Pare", "Shi Yomi", "Siang", "Tawang", "Tirap", "Upper Dibang Valley", "Upper Siang", "Upper Subansiri", "West Kameng", "West Siang"],
-  Assam: ["Baksa", "Barpeta", "Biswanath", "Bongaigaon", "Cachar", "Charaideo", "Darrang", "Dhemaji", "Dhubri", "Dibrugarh", "Goalpara", "Golaghat", "Guwahati", "Hailakandi", "Hojai", "Jorhat", "Kamrup", "Karbi Anglong", "Karimganj", "Kokrajhar", "Lakhimpur", "Majuli", "Morigaon", "Nagaon", "Nalbari", "Sivasagar", "Sonitpur", "Tinsukia", "Udalguri"],
-  Bihar: ["Araria", "Aurangabad", "Banka", "Begusarai", "Bhagalpur", "Bhojpur", "Buxar", "Darbhanga", "Gaya", "Gopalganj", "Jamui", "Jehanabad", "Katihar", "Khagaria", "Kishanganj", "Madhubani", "Munger", "Muzaffarpur", "Nalanda", "Patna", "Purnia", "Rohtas", "Saharsa", "Samastipur", "Saran", "Siwan", "Vaishali"],
-  Chhattisgarh: ["Balod", "Baloda Bazar", "Balrampur", "Bastar", "Bemetara", "Bijapur", "Bilaspur", "Dantewada", "Dhamtari", "Durg", "Gariaband", "Janjgir-Champa", "Jashpur", "Kabirdham", "Kanker", "Kondagaon", "Korba", "Korea", "Mahasamund", "Mungeli", "Raigarh", "Raipur", "Rajnandgaon", "Sukma", "Surajpur", "Surguja"],
-  Goa: ["North Goa", "South Goa"],
-  Gujarat: ["Ahmedabad", "Amreli", "Anand", "Aravalli", "Banaskantha", "Bharuch", "Bhavnagar", "Botad", "Dahod", "Devbhoomi Dwarka", "Gandhinagar", "Gir Somnath", "Jamnagar", "Junagadh", "Kheda", "Kutch", "Mahisagar", "Mehsana", "Morbi", "Narmada", "Navsari", "Panchmahal", "Patan", "Porbandar", "Rajkot", "Sabarkantha", "Surat", "Surendranagar", "Vadodara", "Valsad"],
-  Haryana: ["Ambala", "Bhiwani", "Charkhi Dadri", "Faridabad", "Fatehabad", "Gurugram", "Hisar", "Jhajjar", "Jind", "Kaithal", "Karnal", "Kurukshetra", "Mahendragarh", "Nuh", "Palwal", "Panchkula", "Panipat", "Rewari", "Rohtak", "Sirsa", "Sonipat", "Yamunanagar"],
-  "Himachal Pradesh": ["Bilaspur", "Chamba", "Hamirpur", "Kangra", "Kinnaur", "Kullu", "Lahaul and Spiti", "Mandi", "Shimla", "Sirmaur", "Solan", "Una"],
-  Jharkhand: ["Bokaro", "Chatra", "Deoghar", "Dhanbad", "Dumka", "East Singhbhum", "Garhwa", "Giridih", "Godda", "Gumla", "Hazaribagh", "Jamtara", "Khunti", "Koderma", "Latehar", "Lohardaga", "Palamu", "Ramgarh", "Ranchi", "Sahibganj", "Saraikela Kharsawan", "Simdega", "West Singhbhum"],
-  Karnataka: ["Bagalkot", "Ballari", "Belagavi", "Bengaluru Rural", "Bengaluru Urban", "Bidar", "Chamarajanagar", "Chikkaballapur", "Chikkamagaluru", "Chitradurga", "Dakshina Kannada", "Davangere", "Dharwad", "Gadag", "Hassan", "Haveri", "Kalaburagi", "Kodagu", "Kolar", "Koppal", "Mandya", "Mysuru", "Raichur", "Ramanagara", "Shivamogga", "Tumakuru", "Udupi", "Vijayapura", "Yadgir"],
-  Kerala: ["Alappuzha", "Ernakulam", "Idukki", "Kannur", "Kasaragod", "Kollam", "Kottayam", "Kozhikode", "Malappuram", "Palakkad", "Pathanamthitta", "Thiruvananthapuram", "Thrissur", "Wayanad"],
-  "Madhya Pradesh": ["Agar Malwa", "Alirajpur", "Anuppur", "Ashoknagar", "Balaghat", "Barwani", "Betul", "Bhind", "Bhopal", "Burhanpur", "Chhatarpur", "Chhindwara", "Damoh", "Datia", "Dewas", "Dhar", "Guna", "Gwalior", "Hoshangabad", "Indore", "Jabalpur", "Katni", "Khandwa", "Khargone", "Mandsaur", "Morena", "Narsinghpur", "Neemuch", "Raisen", "Rewa", "Sagar", "Satna", "Sehore", "Shivpuri", "Ujjain", "Vidisha"],
-  Maharashtra: ["Ahmednagar", "Akola", "Amravati", "Aurangabad", "Beed", "Bhandara", "Buldhana", "Chandrapur", "Dhule", "Gondia", "Hingoli", "Jalgaon", "Jalna", "Kolhapur", "Latur", "Mumbai", "Nagpur", "Nanded", "Nandurbar", "Nashik", "Osmanabad", "Palghar", "Parbhani", "Pune", "Raigad", "Ratnagiri", "Sangli", "Satara", "Solapur", "Thane", "Wardha", "Washim", "Yavatmal"],
-  Manipur: ["Bishnupur", "Chandel", "Churachandpur", "Imphal East", "Imphal West", "Jiribam", "Kakching", "Kangpokpi", "Noney", "Senapati", "Tamenglong", "Tengnoupal", "Thoubal", "Ukhrul"],
-  Meghalaya: ["East Garo Hills", "East Jaintia Hills", "East Khasi Hills", "North Garo Hills", "Ri Bhoi", "South Garo Hills", "South West Garo Hills", "West Garo Hills", "West Jaintia Hills", "West Khasi Hills"],
-  Mizoram: ["Aizawl", "Champhai", "Kolasib", "Lawngtlai", "Lunglei", "Mamit", "Saiha", "Serchhip"],
-  Nagaland: ["Dimapur", "Kiphire", "Kohima", "Longleng", "Mokokchung", "Mon", "Peren", "Phek", "Tuensang", "Wokha", "Zunheboto"],
-  Odisha: ["Angul", "Balangir", "Balasore", "Bargarh", "Bhadrak", "Bhubaneswar", "Boudh", "Cuttack", "Dhenkanal", "Ganjam", "Jagatsinghpur", "Jajpur", "Kalahandi", "Kendrapara", "Keonjhar", "Koraput", "Mayurbhanj", "Nabarangpur", "Puri", "Rayagada", "Sambalpur", "Sundargarh"],
-  Punjab: ["Amritsar", "Barnala", "Bathinda", "Faridkot", "Fatehgarh Sahib", "Fazilka", "Ferozepur", "Gurdaspur", "Hoshiarpur", "Jalandhar", "Kapurthala", "Ludhiana", "Mansa", "Moga", "Muktsar", "Patiala", "Rupnagar", "Sangrur", "Tarn Taran"],
-  Rajasthan: ["Ajmer", "Alwar", "Banswara", "Baran", "Barmer", "Bharatpur", "Bhilwara", "Bikaner", "Bundi", "Chittorgarh", "Churu", "Dausa", "Dholpur", "Dungarpur", "Hanumangarh", "Jaipur", "Jaisalmer", "Jalore", "Jhalawar", "Jhunjhunu", "Jodhpur", "Kota", "Nagaur", "Pali", "Sikar", "Tonk", "Udaipur"],
-  Sikkim: ["East Sikkim", "North Sikkim", "South Sikkim", "West Sikkim"],
-  "Tamil Nadu": ["Ariyalur", "Chengalpattu", "Chennai", "Coimbatore", "Cuddalore", "Dharmapuri", "Dindigul", "Erode", "Kanchipuram", "Kanyakumari", "Karur", "Krishnagiri", "Madurai", "Nagapattinam", "Namakkal", "Nilgiris", "Perambalur", "Pudukkottai", "Ramanathapuram", "Salem", "Sivaganga", "Thanjavur", "Theni", "Tiruchirappalli", "Tirunelveli", "Tiruppur", "Vellore", "Virudhunagar"],
-  Telangana: ["Adilabad", "Bhadradri Kothagudem", "Hyderabad", "Jagtial", "Jangaon", "Jayashankar Bhupalpally", "Kamareddy", "Karimnagar", "Khammam", "Mahabubabad", "Mahbubnagar", "Medak", "Medchal Malkajgiri", "Nalgonda", "Nizamabad", "Rangareddy", "Sangareddy", "Siddipet", "Suryapet", "Warangal"],
-  Tripura: ["Dhalai", "Gomati", "Khowai", "North Tripura", "Sepahijala", "South Tripura", "Unakoti", "West Tripura"],
-  "Uttar Pradesh": ["Agra", "Aligarh", "Allahabad", "Ambedkar Nagar", "Amethi", "Ayodhya", "Azamgarh", "Baghpat", "Bahraich", "Ballia", "Banda", "Barabanki", "Bareilly", "Basti", "Bijnor", "Bulandshahr", "Deoria", "Etawah", "Farrukhabad", "Fatehpur", "Ghaziabad", "Ghazipur", "Gorakhpur", "Hardoi", "Jaunpur", "Jhansi", "Kanpur", "Lakhimpur Kheri", "Lucknow", "Mathura", "Meerut", "Moradabad", "Muzaffarnagar", "Prayagraj", "Raebareli", "Rampur", "Saharanpur", "Sitapur", "Sultanpur", "Unnao", "Varanasi"],
-  Uttarakhand: ["Almora", "Bageshwar", "Chamoli", "Champawat", "Dehradun", "Haridwar", "Nainital", "Pauri Garhwal", "Pithoragarh", "Rudraprayag", "Tehri Garhwal", "Udham Singh Nagar", "Uttarkashi"],
-  "West Bengal": ["Alipurduar", "Bankura", "Birbhum", "Cooch Behar", "Dakshin Dinajpur", "Darjeeling", "Hooghly", "Howrah", "Jalpaiguri", "Jhargram", "Kalimpong", "Kolkata", "Malda", "Murshidabad", "Nadia", "North 24 Parganas", "Paschim Bardhaman", "Paschim Medinipur", "Purba Bardhaman", "Purba Medinipur", "Purulia", "South 24 Parganas", "Uttar Dinajpur"],
-  "Andaman and Nicobar Islands": ["Nicobar", "North and Middle Andaman", "South Andaman"],
-  Chandigarh: ["Chandigarh"],
-  "Dadra and Nagar Haveli and Daman and Diu": ["Dadra and Nagar Haveli", "Daman", "Diu"],
-  Delhi: ["Central Delhi", "East Delhi", "New Delhi", "North Delhi", "Shahdara", "South Delhi", "West Delhi"],
-  "Jammu and Kashmir": ["Anantnag", "Baramulla", "Budgam", "Doda", "Jammu", "Kathua", "Kishtwar", "Kupwara", "Pulwama", "Rajouri", "Samba", "Srinagar", "Udhampur"],
-  Ladakh: ["Kargil", "Leh"],
-  Lakshadweep: ["Lakshadweep"],
-  Puducherry: ["Karaikal", "Mahe", "Puducherry", "Yanam"],
-};
-
 const LANGS = {
   en: { name: "English", label: "EN" },
-  hi: { name: "Hindi", label: "हि" },
-  mr: { name: "Marathi", label: "मर" },
-  ta: { name: "Tamil", label: "த" },
-  te: { name: "Telugu", label: "తె" },
-  bn: { name: "Bengali", label: "বা" },
-  gu: { name: "Gujarati", label: "ગુ" },
-  kn: { name: "Kannada", label: "ಕ" },
-  ml: { name: "Malayalam", label: "മ" },
-  pa: { name: "Punjabi", label: "ਪੰ" },
-  or: { name: "Odia", label: "ଓ" },
-  as: { name: "Assamese", label: "অ" },
-  ur: { name: "Urdu", label: "اُ" },
-  ne: { name: "Nepali", label: "ने" },
-  kok: { name: "Konkani", label: "Ko" },
-  mai: { name: "Maithili", label: "मै" },
-  sa: { name: "Sanskrit", label: "सं" },
-  sd: { name: "Sindhi", label: "سن" },
-  ks: { name: "Kashmiri", label: "کش" },
-  mni: { name: "Manipuri", label: "মৈ" },
-  brx: { name: "Bodo", label: "बो" },
-  sat: { name: "Santali", label: "ᱥᱟ" },
-  doi: { name: "Dogri", label: "डो" },
+  hi: { name: "Hindi", label: "HI" },
+  mr: { name: "Marathi", label: "MR" },
 };
 
 const COPY = {
@@ -122,10 +62,8 @@ const UI = {
     forecast: "Forecast",
     expectedYield: "Expected yield",
     weather: "Weather",
-    mandiComparison: "Mandi Comparison",
     recommendedCrops: "Recommended Crops",
     compareTitle: "Should I grow this or that?",
-    compareHelp: "Compare two crops for your state, district, season, soil, weather, fit, demand, risk, and expected return.",
     recommended: "Recommended",
     alternative: "Alternative",
     setAlert: "Set Price Alert",
@@ -167,9 +105,6 @@ const UI = {
     name: "Name",
     location: "Location",
     farmSize: "Farm size",
-    voiceInput: "Voice Input",
-    voiceReady: "Ready for mobile speech-to-text integration.",
-    chatbot: "AI Chatbot",
   },
   hi: {
     ...COPY.hi,
@@ -195,10 +130,8 @@ const UI = {
     forecast: "पूर्वानुमान",
     expectedYield: "अपेक्षित उपज",
     weather: "मौसम",
-    mandiComparison: "मंडी तुलना",
     recommendedCrops: "सुझाई गई फसलें",
     compareTitle: "यह उगाऊं या वह?",
-    compareHelp: "अपने राज्य, जिला, मौसम, मिट्टी, मांग, जोखिम और रिटर्न के आधार पर दो फसलों की तुलना करें.",
     recommended: "सुझाव",
     alternative: "विकल्प",
     setAlert: "भाव अलर्ट सेट करें",
@@ -240,9 +173,6 @@ const UI = {
     name: "नाम",
     location: "स्थान",
     farmSize: "खेत आकार",
-    voiceInput: "वॉइस इनपुट",
-    voiceReady: "मोबाइल स्पीच-टू-टेक्स्ट के लिए तैयार.",
-    chatbot: "एआई चैटबॉट",
   },
   mr: {
     ...COPY.mr,
@@ -268,10 +198,8 @@ const UI = {
     forecast: "अंदाज",
     expectedYield: "अपेक्षित उत्पादन",
     weather: "हवामान",
-    mandiComparison: "बाजार तुलना",
     recommendedCrops: "सुचवलेली पिके",
     compareTitle: "हे पीक घ्यावे की ते?",
-    compareHelp: "तुमच्या राज्य, जिल्हा, हंगाम, माती, मागणी, जोखीम आणि परताव्यानुसार दोन पिकांची तुलना करा.",
     recommended: "शिफारस",
     alternative: "पर्याय",
     setAlert: "भाव अलर्ट सेट करा",
@@ -313,15 +241,9 @@ const UI = {
     name: "नाव",
     location: "ठिकाण",
     farmSize: "शेत आकार",
-    voiceInput: "वॉइस इनपुट",
-    voiceReady: "मोबाइल स्पीच-टू-टेक्स्टसाठी तयार.",
-    chatbot: "एआय चॅटबॉट",
   },
 };
 
-Object.keys(LANGS).forEach((code) => {
-  UI[code] = UI[code] || { ...UI.en };
-});
 
 const ALL_CROPS = Object.keys(crops);
 const soilOptions = ["Black soil", "Red soil", "Alluvial soil", "Sandy soil", "Clay soil"];
@@ -549,9 +471,6 @@ function App() {
   const [healthPreview, setHealthPreview] = useState("");
   const [symptoms, setSymptoms] = useState(["Yellow leaves"]);
   const [profileForm, setProfileForm] = useState(() => readStored("farm-session", defaultUser) || defaultUser);
-  const [chatInput, setChatInput] = useState("");
-  const [chatMessages, setChatMessages] = useState([]);
-  const [voiceStatus, setVoiceStatus] = useState("");
 
   const copy = UI[language] ?? UI.en;
   const t = (key) => copy[key] ?? UI.en[key] ?? key;
@@ -631,32 +550,6 @@ Confidence: ${prediction.confidence}%`;
     setUser(nextUser);
     setLanguage(nextUser.lang || "en");
     setInput((current) => inputWithWeather({ ...current, state: nextUser.state, region: nextUser.district }));
-  }
-
-  function sendChat(message = chatInput) {
-    const question = String(message || "").trim();
-    if (!question) return;
-    const answer = `${prediction.sellingWindow} for ${input.crop} in ${input.region}. Current model price is ${formatINR(prediction.predicted)}/q with ${prediction.demand.toLowerCase()} demand, ${prediction.risk.toLowerCase()} risk, and ${weather.condition.toLowerCase()} weather. ${weather.advisory}`;
-    setChatMessages((current) => [...current, { role: "Farmer", text: question }, { role: "Assistant", text: answer }].slice(-8));
-    setChatInput("");
-  }
-
-  function startVoiceInput() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setVoiceStatus("Speech input is not available in this browser. Type the crop or city in the fields above.");
-      return;
-    }
-    const recognition = new SpeechRecognition();
-    recognition.lang = language === "hi" ? "hi-IN" : "en-IN";
-    recognition.onstart = () => setVoiceStatus("Listening...");
-    recognition.onerror = () => setVoiceStatus("Could not hear clearly. Try again.");
-    recognition.onresult = (event) => {
-      const transcript = event.results?.[0]?.[0]?.transcript || "";
-      setVoiceStatus(transcript);
-      sendChat(transcript);
-    };
-    recognition.start();
   }
 
   async function onHealthPhoto(file) {
@@ -753,6 +646,7 @@ Confidence: ${prediction.confidence}%`;
               <strong>{weather.temperature}C</strong>
               <span>{weather.rainfall}mm rain</span>
             </div>
+            <p className="muted model-note">Final price uses three local forecasting methods in the background.</p>
           </article>
         </section>
 
@@ -781,7 +675,7 @@ Confidence: ${prediction.confidence}%`;
             </div>
           </article>
           <article className="panel">
-            <div className="compare-list compact-compare">{comparison.map((item) => <div className={item.crop === comparison[0]?.crop ? "compare-card winner" : "compare-card"} key={item.crop}><div className="compare-head"><strong>{item.crop}</strong><span>{item.score}/100</span></div><div className="compare-metrics"><b>{formatINR(item.predicted)}/q</b><b>{formatINR(item.projectedReturn)} return</b><b>{item.risk} risk</b></div><small>{item.fit}% fit - {item.demand} demand - {item.reason}</small><div className="score-track"><span style={{ width: `${item.score}%` }} /></div></div>)}</div>
+            <div className="compare-list compact-compare">{comparison.map((item) => <div className={item.crop === comparison[0]?.crop ? "compare-card winner" : "compare-card"} key={item.crop}><div className="compare-head"><strong>{item.crop}</strong><span>{item.score}/100</span></div><div className="compare-metrics"><b>{formatINR(item.predicted)}/q</b><b>{formatINR(item.netReturn)} net</b><b>{item.risk} risk</b></div><div className="badge-row">{item.badges.map((badge) => <span key={badge}>{badge}</span>)}</div><small>{item.advice} {item.rank === 1 && comparison[1] ? `${formatINR(Math.abs(item.margin))} better net return.` : item.reason}</small><div className="score-track"><span style={{ width: `${item.score}%` }} /></div></div>)}</div>
           </article>
         </section>
 
@@ -805,7 +699,7 @@ Confidence: ${prediction.confidence}%`;
             {healthPreview && <img className="photo-preview" src={healthPreview} alt="Uploaded crop" />}
             <div className="chips">{["Yellow leaves", "Dry soil", "Slow growth", "White spots"].map((symptom) => <button key={symptom} className={symptoms.includes(symptom) ? "active" : ""} onClick={() => setSymptoms((current) => current.includes(symptom) ? current.filter((item) => item !== symptom) : [...current, symptom])}>{symptom}</button>)}</div>
           </article>
-          <article className="panel"><div className="panel-title"><ShieldCheck /><h2>{t("healthResult")}</h2></div><div className="guidance"><strong>{health.issue}</strong><span>{health.fertilizer}</span><p>{health.advice} {health.prevention}</p></div>{healthPhoto && <div className="model-list"><div><span>{t("localPhotoScan")}</span><strong>{symptoms.join(", ")}</strong></div><div><span>{t("file")}</span><strong>{healthPhoto.name}</strong></div></div>}<p className="muted">{t("healthNote")}</p></article>
+          <article className="panel"><div className="panel-title"><ShieldCheck /><h2>{t("healthResult")}</h2></div><div className={`guidance severity-${health.severity.toLowerCase()}`}><div className="health-score"><strong>{health.issue}</strong><span>{health.severity} risk - {health.confidence}% confidence</span></div><p>{health.advice}</p><p>{health.prevention}</p></div><div className="action-list">{health.actions.map((action) => <span key={action}>{action}</span>)}</div><div className="model-list"><div><span>Treatment</span><strong>{health.fertilizer}</strong></div>{healthPhoto && <><div><span>{t("localPhotoScan")}</span><strong>{symptoms.join(", ")}</strong></div><div><span>{t("file")}</span><strong>{healthPhoto.name}</strong></div></>}</div><p className="muted">{t("healthNote")}</p></article>
         </section>
 
         <section className={`grid two ${activeTab !== "history" ? "tab-hidden" : ""}`} id="history">
@@ -813,15 +707,11 @@ Confidence: ${prediction.confidence}%`;
           <article className="panel"><div className="panel-title"><History /><h2>Prediction History</h2></div><div className="history-list">{history.length === 0 ? <p className="muted">Save predictions to compare them later with the current situation.</p> : history.map((item) => <div key={item.id}><span>{item.savedAt}</span><strong>{item.input.crop}: {formatINR(item.prediction.predicted)}/q</strong><small>{item.input.region}, {item.input.state} · Current now: {item.input.crop === input.crop ? formatINR(prediction.predicted) : "select same crop to compare"}</small><button onClick={() => setHistory((current) => current.filter((entry) => entry.id !== item.id))}><Trash2 /> Delete</button></div>)}</div></article>
         </section>
 
-        <section className={`grid three ${activeTab !== "profile" ? "tab-hidden" : ""}`}>
+        <section className={`grid two ${activeTab !== "profile" ? "tab-hidden" : ""}`}>
           <article className="panel"><div className="panel-title"><Calculator /><h2>{t("profitCalculator")}</h2></div><div className="cost-grid">{Object.entries(costs).map(([key, value]) => <label key={key}><span>{key}</span><input type="number" min="0" value={value} onChange={(event) => setCosts((current) => ({ ...current, [key]: Math.max(0, Number(event.target.value) || 0) }))} /></label>)}</div><div className="profit-strip"><Stat label={t("investment")} value={formatINR(investment)} /><Stat label={t("return")} value={formatINR(expectedReturn)} /><Stat label={t("profit")} value={formatINR(profit)} tone={profit > 0 ? "profit" : "risk"} /></div></article>
-          <article className="panel"><div className="panel-title"><Bot /><h2>{t("chatbot")}</h2></div><div className="chat-box">{chatMessages.length === 0 ? <><p>Farmer: Should I sell {input.crop}?</p><strong>Assistant: {prediction.sellingWindow}. Demand is {prediction.demand.toLowerCase()}, risk is {prediction.risk.toLowerCase()}, and {input.region} weather is {weather.condition.toLowerCase()}.</strong></> : chatMessages.map((item, index) => <p key={index}><strong>{item.role}:</strong> {item.text}</p>)}</div><div className="chat-input"><input value={chatInput} placeholder={`Ask about ${input.crop} in ${input.region}`} onChange={(event) => setChatInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") sendChat(); }} /><button onClick={() => sendChat()}><Send /> Send</button></div></article>
           <article className="panel" id="profile"><div className="panel-title"><Users /><h2>{t("profile")}</h2></div><form className="profile-form" onSubmit={saveProfile}><TextField label={t("name")} value={profileForm.name || ""} onChange={(value) => setProfileForm((current) => ({ ...current, name: value }))} /><SelectField label={t("state")} value={profileForm.state || input.state} onChange={(value) => setProfileForm((current) => ({ ...current, state: value, district: STATES_DISTRICTS[value][0] }))} options={Object.keys(STATES_DISTRICTS)} /><SelectField label={t("district")} value={profileForm.district || input.region} onChange={(value) => setProfileForm((current) => ({ ...current, district: value }))} options={STATES_DISTRICTS[profileForm.state || input.state]} /><SelectField label={t("farmSize")} value={profileForm.farmSize || farmSizes[1]} onChange={(value) => setProfileForm((current) => ({ ...current, farmSize: value }))} options={farmSizes} /><SelectField label={t("language")} value={profileForm.lang || language} onChange={(value) => setProfileForm((current) => ({ ...current, lang: value }))} options={Object.keys(LANGS)} /><button className="primary-action" type="submit">{t("save")}</button></form></article>
         </section>
 
-        <section className={`grid three ${activeTab !== "profile" ? "tab-hidden" : ""}`} id="community">
-          <article className="panel"><div className="panel-title"><Mic /><h2>{t("voiceInput")}</h2></div><button className="voice-button" onClick={startVoiceInput}>Predict {input.crop} price in {input.region}</button><p className="muted">{voiceStatus || t("voiceReady")}</p></article>
-        </section>
       </section>
       {shareOpen && <ShareSheet text={shareText} onClose={() => setShareOpen(false)} />}
     </main>

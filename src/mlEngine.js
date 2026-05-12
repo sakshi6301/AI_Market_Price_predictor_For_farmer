@@ -54,8 +54,6 @@ export const crops = {
   Flaxseed: { base: 5900, volatility: 0.13, demand: 0.61, season: "Rabi", soil: "Black soil", waterNeed: "Low" },
 };
 
-export const cities = ["Pune", "Mumbai", "Nashik", "Nagpur", "Delhi", "Bangalore", "Hyderabad", "Ahmedabad", "Ludhiana", "Indore", "Jaipur", "Lucknow", "Patna", "Kolkata", "Chennai", "Bhopal", "Raipur", "Bhubaneswar", "Kochi", "Guwahati"];
-
 const cityMultipliers = {
   Pune: 1,
   Mumbai: 1.12,
@@ -175,6 +173,52 @@ function weatherScore(input, cropProfile) {
   return clamp(1 + humidityBoost + rainfallBoost + waterPenalty - tempPenalty, 0.78, 1.2);
 }
 
+function linearRegressionEstimate(profile, features) {
+  const weights = {
+    base: 1,
+    city: 0.29,
+    soil: 0.22,
+    season: 0.18,
+    climate: 0.2,
+    demand: 0.08,
+    forecast: 0.03,
+  };
+  const multiplier =
+    weights.base +
+    (features.cityScore - 1) * weights.city +
+    (features.soilScore - 1) * weights.soil +
+    (features.seasonScore - 1) * weights.season +
+    (features.climateScore - 1) * weights.climate +
+    (profile.demand - 0.68) * weights.demand +
+    features.trendLift * weights.forecast;
+  return profile.base * clamp(multiplier, 0.72, 1.34);
+}
+
+function randomForestEstimate(profile, features) {
+  const treeRules = [
+    () => profile.base * features.cityScore * features.soilScore,
+    () => profile.base * features.cityScore * features.seasonScore * features.demandTrend,
+    () => profile.base * features.cityScore * features.climateScore,
+    () => profile.base * features.seasonScore * features.climateScore * (1 + profile.volatility * 0.08),
+    () => profile.base * features.cityScore * (features.soilScore > 1.04 ? 1.07 : 0.98) * features.demandTrend,
+  ];
+  const votes = treeRules.map((rule) => rule());
+  return votes.reduce((sum, value) => sum + value, 0) / votes.length;
+}
+
+function lstmForecastEstimate(profile, features, input) {
+  const trend = Array.from({ length: 6 }, (_, index) => {
+    const wave = Math.sin((index + 1) * 0.75) * profile.volatility * 0.42;
+    const growth = (index + 1) * features.trendLift * 0.2;
+    return profile.base * features.cityScore * (1 + wave + growth);
+  });
+  const recurrentSignal = trend.reduce((state, value, index) => {
+    const gate = 0.58 + index * 0.035;
+    return state * gate + value * (1 - gate);
+  }, profile.base * features.cityScore);
+  return recurrentSignal * features.seasonScore * features.climateScore * (1 + Math.min(input.forecastDays, 10) * profile.volatility * 0.006);
+}
+
 export function predictPrice(input) {
   const profile = getCropProfile(input.crop);
   const cityScore = cityMultipliers[input.region] ?? (0.94 + (textHash(input.region) % 18) / 100);
@@ -184,10 +228,11 @@ export function predictPrice(input) {
   const demandTrend = 1 + profile.demand * 0.09;
   const trendLift = input.forecastDays * profile.volatility * 0.014;
 
-  const linearModel = profile.base * cityScore * soilScore * climateScore;
-  const forestModel = profile.base * cityScore * seasonScore * demandTrend;
-  const sequenceModel = profile.base * (1 + trendLift) * climateScore * seasonScore;
-  const predicted = Math.round((linearModel * 0.32 + forestModel * 0.38 + sequenceModel * 0.3) / 10) * 10;
+  const features = { cityScore, soilScore, seasonScore, climateScore, demandTrend, trendLift };
+  const linearModel = linearRegressionEstimate(profile, features);
+  const forestModel = randomForestEstimate(profile, features);
+  const sequenceModel = lstmForecastEstimate(profile, features, input);
+  const predicted = Math.round((linearModel * 0.3 + forestModel * 0.42 + sequenceModel * 0.28) / 10) * 10;
   const current = Math.round(profile.base * cityScore);
   const change = ((predicted - current) / current) * 100;
   const confidence = Math.round(clamp(88 - profile.volatility * 65 + Math.abs(soilScore - 1) * 20 + (seasonScore > 1 ? 5 : 0), 60, 95));
@@ -204,9 +249,9 @@ export function predictPrice(input) {
     sellingWindow: change > 5 ? `Hold ${Math.min(input.forecastDays, 7)} days` : change < -2 ? "Sell soon" : "Watch market",
     cropFit: Math.round(clamp((soilScore * 0.38 + seasonScore * 0.34 + climateScore * 0.28 - 0.82) * 100, 38, 98)),
     models: [
-      { name: "Linear Regression", value: Math.round(linearModel) },
-      { name: "Random Forest", value: Math.round(forestModel) },
-      { name: "LSTM Forecast", value: Math.round(sequenceModel) },
+      { name: "Linear Regression", value: Math.round(linearModel), note: "feature-weight estimate" },
+      { name: "Random Forest", value: Math.round(forestModel), note: "5 rule trees" },
+      { name: "LSTM Forecast", value: Math.round(sequenceModel), note: "sequence trend estimate" },
     ],
   };
 }
@@ -219,13 +264,6 @@ export function buildTrend(crop, region) {
     const growth = index * profile.volatility * 0.018;
     return Math.round(profile.base * cityScore * (1 + wave + growth));
   });
-}
-
-export function compareCities(crop) {
-  const profile = getCropProfile(crop);
-  return cities
-    .map((city) => ({ city, price: Math.round(profile.base * (cityMultipliers[city] ?? 1) * (1 + profile.volatility * 0.22)) }))
-    .sort((a, b) => b.price - a.price);
 }
 
 export function recommendCrops(input) {
@@ -242,11 +280,26 @@ export function recommendCrops(input) {
 }
 
 export function compareCropChoices(input, cropA, cropB) {
-  return [cropA, cropB].filter(Boolean).map((crop) => {
+  const compared = [cropA, cropB].filter(Boolean).map((crop) => {
     const result = predictPrice({ ...input, crop });
     const profile = getCropProfile(crop);
     const projectedReturn = result.predicted * (Number(input.yieldQty) || 1);
-    const score = Math.round(result.cropFit * 0.38 + result.confidence * 0.24 + (result.demand === "High" ? 20 : result.demand === "Medium" ? 14 : 10) + (result.risk === "Low" ? 18 : result.risk === "Medium" ? 10 : 4));
+    const seasonMatch = input.season === profile.season;
+    const soilMatch = input.soil === profile.soil || result.cropFit >= 62;
+    const waterFit =
+      (profile.waterNeed === "High" && input.rainfall >= 55) ||
+      (profile.waterNeed === "Medium" && input.rainfall >= 25 && input.rainfall <= 95) ||
+      (profile.waterNeed === "Low" && input.rainfall <= 75);
+    const costFactor = profile.waterNeed === "High" ? 0.18 : profile.waterNeed === "Medium" ? 0.14 : 0.1;
+    const estimatedCost = Math.round(projectedReturn * costFactor);
+    const netReturn = projectedReturn - estimatedCost;
+    const score = Math.round(
+      result.cropFit * 0.34 +
+      result.confidence * 0.22 +
+      (result.demand === "High" ? 18 : result.demand === "Medium" ? 13 : 9) +
+      (result.risk === "Low" ? 16 : result.risk === "Medium" ? 9 : 3) +
+      (waterFit ? 8 : 0)
+    );
     return {
       crop,
       predicted: result.predicted,
@@ -255,23 +308,74 @@ export function compareCropChoices(input, cropA, cropB) {
       confidence: result.confidence,
       fit: result.cropFit,
       projectedReturn,
+      estimatedCost,
+      netReturn,
       score: clamp(score, 0, 100),
+      badges: [
+        seasonMatch ? "Season match" : `${profile.season} crop`,
+        soilMatch ? "Soil fit" : `${profile.soil} preferred`,
+        waterFit ? "Water fit" : `${profile.waterNeed} water need`,
+      ],
+      advice: result.risk === "High"
+        ? "Keep quantity limited or wait for safer demand."
+        : waterFit && soilMatch
+          ? "Good candidate for current field conditions."
+          : "Check soil and irrigation before choosing.",
       reason: `${profile.season} season, ${profile.soil}, ${profile.waterNeed.toLowerCase()} water need`,
     };
   }).sort((a, b) => b.score - a.score);
+
+  return compared.map((item, index) => ({
+    ...item,
+    rank: index + 1,
+    margin: index === 0 && compared[1] ? item.netReturn - compared[1].netReturn : item.netReturn - compared[0]?.netReturn,
+  }));
 }
 
 export function diagnoseHealth(symptoms, crop = "Crop", imageMeta = null) {
   const selected = new Set(symptoms);
   const imageHint = imageMeta ? ` Photo file "${imageMeta.name}" is attached for agronomist review.` : "";
+  const photoConfidence = imageMeta ? 14 : 0;
   if (selected.has("White spots") && selected.has("Yellow leaves")) {
-    return { issue: `Possible fungal infection in ${crop}`, fertilizer: "Potassium-rich foliar spray", advice: "Reduce leaf wetness and isolate affected plants.", prevention: `Use morning irrigation and improve airflow.${imageHint}` };
+    return {
+      issue: `Possible fungal infection in ${crop}`,
+      severity: "High",
+      confidence: 76 + photoConfidence,
+      fertilizer: "Potassium-rich foliar spray",
+      advice: "Remove badly affected leaves, avoid overhead watering, and spray only after confirming with a local agronomist.",
+      prevention: `Use morning irrigation, improve airflow, and avoid dense planting.${imageHint}`,
+      actions: ["Isolate affected patch", "Avoid leaf wetness", "Review in 3 days"],
+    };
   }
   if (selected.has("Dry soil") && selected.has("Slow growth")) {
-    return { issue: `Water stress with nutrient slowdown in ${crop}`, fertilizer: "Balanced NPK compost mix", advice: "Increase watering frequency in small cycles.", prevention: `Mulch soil to reduce evaporation.${imageHint}` };
+    return {
+      issue: `Water stress with nutrient slowdown in ${crop}`,
+      severity: "Medium",
+      confidence: 70 + photoConfidence,
+      fertilizer: "Balanced NPK compost mix",
+      advice: "Increase watering in smaller cycles and apply compost only after soil moisture improves.",
+      prevention: `Mulch soil to reduce evaporation and check drip lines for blockage.${imageHint}`,
+      actions: ["Irrigate in cycles", "Mulch root zone", "Check drip flow"],
+    };
   }
   if (selected.has("Yellow leaves")) {
-    return { issue: `Nitrogen deficiency likely in ${crop}`, fertilizer: "Nitrogen-rich organic manure", advice: "Apply in controlled dose after soil moisture check.", prevention: `Rotate crops and test soil monthly.${imageHint}` };
+    return {
+      issue: `Nitrogen deficiency likely in ${crop}`,
+      severity: "Medium",
+      confidence: 64 + photoConfidence,
+      fertilizer: "Nitrogen-rich organic manure",
+      advice: "Apply a controlled dose after soil moisture check. Do not overapply if leaves are also spotted.",
+      prevention: `Rotate crops and test soil monthly.${imageHint}`,
+      actions: ["Check soil moisture", "Apply controlled dose", "Recheck new leaves"],
+    };
   }
-  return { issue: `No critical issue detected for ${crop}`, fertilizer: "Maintain regular compost schedule", advice: "Monitor leaves and soil moisture weekly.", prevention: `Keep field sanitation and balanced irrigation.${imageHint}` };
+  return {
+    issue: `No critical issue detected for ${crop}`,
+    severity: "Low",
+    confidence: 58 + photoConfidence,
+    fertilizer: "Maintain regular compost schedule",
+    advice: "Monitor leaves and soil moisture weekly.",
+    prevention: `Keep field sanitation and balanced irrigation.${imageHint}`,
+    actions: ["Monitor weekly", "Keep field clean", "Avoid overwatering"],
+  };
 }
