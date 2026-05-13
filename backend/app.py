@@ -4,7 +4,9 @@ import math
 from functools import lru_cache
 
 import joblib
-from fastapi import FastAPI
+from datetime import datetime
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -33,6 +35,26 @@ class PredictionInput(BaseModel):
     season: str = "Zaid"
     forecastDays: int = Field(5, ge=1, le=30)
     yieldQty: int = Field(11, ge=1, le=1000)
+    month: int = Field(default_factory=lambda: datetime.now().month, ge=1, le=12)
+    mandiName: str = "Pune"
+    msp: float = Field(0, ge=0)
+    arrivalQty: float = Field(1000, ge=0)
+    rainfallHistory: float = Field(48, ge=0, le=500)
+    demandTrend: float = Field(0, ge=-1, le=1)
+
+
+class AuthInput(BaseModel):
+    email: str
+    password: str
+
+
+class RegisterInput(AuthInput):
+    name: str = "Farmer"
+    mobile: str = ""
+    state: str = "Maharashtra"
+    district: str = "Pune"
+    farmSize: str = "2-5 acres"
+    lang: str = "en"
 
 
 class AlertInput(BaseModel):
@@ -67,6 +89,12 @@ def feature_payload(input_data: PredictionInput) -> dict:
         "rainfall": input_data.rainfall,
         "forecastDays": input_data.forecastDays,
         "yieldQty": input_data.yieldQty,
+        "month": input_data.month,
+        "mandiName": input_data.mandiName or input_data.region,
+        "msp": input_data.msp or profile["base"] * 0.82,
+        "arrivalQty": input_data.arrivalQty,
+        "rainfallHistory": input_data.rainfallHistory,
+        "demandTrend": input_data.demandTrend,
         "demand": profile["demand"],
         "volatility": profile["volatility"],
     }
@@ -100,6 +128,50 @@ def health() -> dict:
     return {"status": "ok", "database": str(db.DB_PATH.name), "model": str(MODEL_PATH.name)}
 
 
+@app.get("/")
+def root() -> dict:
+    return {
+        "name": "AI Market Price Predictor API",
+        "docs": "/docs",
+        "api": "/api",
+        "predict": "POST /api/predict",
+    }
+
+
+@app.get("/api")
+def api_index() -> dict:
+    return {
+        "message": "Use /docs for interactive API testing. /api/predict requires POST JSON input.",
+        "endpoints": [
+            "POST /api/auth/register",
+            "POST /api/auth/login",
+            "GET /api/model-info",
+            "POST /api/predict",
+            "GET /api/history",
+            "POST /api/history",
+            "GET /api/alerts",
+            "POST /api/alerts",
+        ],
+    }
+
+
+@app.post("/api/auth/register")
+def register(payload: RegisterInput) -> dict:
+    try:
+        user = db.create_user(payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"user": user}
+
+
+@app.post("/api/auth/login")
+def login(payload: AuthInput) -> dict:
+    user = db.authenticate_user(payload.email, payload.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email/mobile or password")
+    return {"user": user}
+
+
 @app.get("/api/model-info")
 def model_info() -> dict:
     return model_bundle()["metrics"]
@@ -120,6 +192,7 @@ def predict(input_data: PredictionInput) -> dict:
             "mae": bundle["metrics"]["mae"],
             "r2": bundle["metrics"]["r2"],
             "trainingRows": bundle["metrics"]["training_rows"],
+            "dataSource": bundle["metrics"].get("data_source", "unknown"),
         },
         **infer_business_fields(input_data, rounded_prediction),
     }

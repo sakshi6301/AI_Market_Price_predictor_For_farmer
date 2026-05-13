@@ -1,5 +1,25 @@
 const API_BASE = "http://127.0.0.1:8000";
 
+export async function loginUser(credentials) {
+  const response = await fetch(`${API_BASE}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(credentials),
+  });
+  if (!response.ok) throw new Error((await response.json()).detail || "Login failed");
+  return response.json();
+}
+
+export async function registerUser(payload) {
+  const response = await fetch(`${API_BASE}/api/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error((await response.json()).detail || "Registration failed");
+  return response.json();
+}
+
 export async function fetchPrediction(input, signal) {
   const response = await fetch(`${API_BASE}/api/predict`, {
     method: "POST",

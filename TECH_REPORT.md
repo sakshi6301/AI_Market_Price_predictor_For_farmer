@@ -21,6 +21,7 @@ Full-stack crop market price prediction app.
 - Pydantic: request validation for prediction and alert payloads.
 - SQLite: local database stored at `backend/market_data.db`.
 - sqlite3: built-in Python database adapter used by `backend/db.py`.
+- PBKDF2-HMAC-SHA256: password hashing for backend login/register.
 
 ## Machine Learning
 
@@ -46,6 +47,12 @@ The model is trained by `backend/train_model.py` on generated crop-market traini
 - Rainfall
 - Forecast days
 - Yield quantity
+- Date/month
+- Mandi name
+- MSP
+- Arrival quantity
+- Rainfall history
+- Demand trend
 - Crop demand
 - Crop volatility
 
@@ -77,4 +84,4 @@ The target value is crop market price per quintal. The training script stores:
 
 ## Important Note
 
-This now uses a real trained scikit-learn model and a real backend/database. The training data is generated inside the project from crop profiles and market/weather assumptions because no external government market dataset was provided. For production accuracy, replace the generated rows with real mandi/APMC price history and retrain the same pipeline.
+This now uses a real trained scikit-learn model and a real backend/database. The trainer first looks for real mandi/APMC/Agmarknet-style CSV data at `backend/data/mandi_prices.csv`. If that file has enough valid rows, it trains from the CSV. If no real CSV is present, it falls back to generated market-profile rows so the project remains runnable.

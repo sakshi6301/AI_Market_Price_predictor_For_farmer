@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import secrets
 import sqlite3
+from hashlib import pbkdf2_hmac
 from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent / "market_data.db"
@@ -17,6 +19,23 @@ def init_db() -> None:
     with connect() as connection:
         connection.execute(
             """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE,
+                mobile TEXT,
+                password_hash TEXT NOT NULL,
+                salt TEXT NOT NULL,
+                state TEXT,
+                district TEXT,
+                farm_size TEXT,
+                lang TEXT NOT NULL DEFAULT 'en',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        connection.execute(
+            """
             CREATE TABLE IF NOT EXISTS predictions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 crop TEXT NOT NULL,
@@ -29,6 +48,82 @@ def init_db() -> None:
             )
             """
         )
+        ensure_demo_user(connection)
+
+
+def hash_password(password: str, salt: str | None = None) -> tuple[str, str]:
+    password_salt = salt or secrets.token_hex(16)
+    digest = pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(password_salt), 120_000)
+    return digest.hex(), password_salt
+
+
+def ensure_demo_user(connection: sqlite3.Connection) -> None:
+    existing = connection.execute("SELECT id FROM users WHERE email = ?", ("demo@farm.ai",)).fetchone()
+    if existing:
+        return
+    password_hash, salt = hash_password("demo123")
+    connection.execute(
+        """
+        INSERT INTO users (name, email, mobile, password_hash, salt, state, district, farm_size, lang)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("Farmer", "demo@farm.ai", "", password_hash, salt, "Maharashtra", "Pune", "2-5 acres", "en"),
+    )
+
+
+def public_user(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "email": row["email"],
+        "mobile": row["mobile"] or "",
+        "state": row["state"] or "Maharashtra",
+        "district": row["district"] or "Pune",
+        "farmSize": row["farm_size"] or "2-5 acres",
+        "lang": row["lang"] or "en",
+        "createdAt": row["created_at"],
+    }
+
+
+def create_user(payload: dict) -> dict:
+    password_hash, salt = hash_password(payload["password"])
+    with connect() as connection:
+        try:
+            cursor = connection.execute(
+                """
+                INSERT INTO users (name, email, mobile, password_hash, salt, state, district, farm_size, lang)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload.get("name") or "Farmer",
+                    payload["email"],
+                    payload.get("mobile") or "",
+                    password_hash,
+                    salt,
+                    payload.get("state") or "Maharashtra",
+                    payload.get("district") or "Pune",
+                    payload.get("farmSize") or "2-5 acres",
+                    payload.get("lang") or "en",
+                ),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("Email already registered") from exc
+        row = connection.execute("SELECT * FROM users WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    return public_user(row)
+
+
+def authenticate_user(identifier: str, password: str) -> dict | None:
+    with connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM users WHERE email = ? OR mobile = ?",
+            (identifier, identifier),
+        ).fetchone()
+    if not row:
+        return None
+    password_hash, _ = hash_password(password, row["salt"])
+    if not secrets.compare_digest(password_hash, row["password_hash"]):
+        return None
+    return public_user(row)
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS alerts (

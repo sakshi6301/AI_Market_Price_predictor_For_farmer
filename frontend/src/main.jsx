@@ -22,7 +22,7 @@ import {
   Users,
 } from "lucide-react";
 import { STATES_DISTRICTS } from "./locationData.js";
-import { fetchModelInfo, fetchPrediction, fetchPredictionHistory, saveAlertToDatabase, savePredictionToDatabase } from "./api.js";
+import { fetchModelInfo, fetchPrediction, fetchPredictionHistory, loginUser, registerUser, saveAlertToDatabase, savePredictionToDatabase } from "./api.js";
 import { buildTrend, compareCropChoices, diagnoseHealth, getCityWeather, predictPrice, recommendCrops, crops } from "./mlEngine.js";
 import "./styles.css";
 
@@ -251,7 +251,7 @@ const soilOptions = ["Black soil", "Red soil", "Alluvial soil", "Sandy soil", "C
 const seasonOptions = ["Kharif", "Rabi", "Zaid"];
 const farmSizes = ["< 1 acre", "1-2 acres", "2-5 acres", "5-10 acres", "10+ acres"];
 const defaultUser = { name: "Farmer", mobile: "", email: "demo@farm.ai", password: "demo123", state: "Maharashtra", district: "Pune", farmSize: "2-5 acres", lang: "en", notifications: true };
-const initialInput = { crop: "Tomato", soil: "Red soil", temperature: 29, humidity: 62, rainfall: 48, state: "Maharashtra", region: "Pune", season: "Zaid", forecastDays: 5, yieldQty: 11 };
+const initialInput = { crop: "Tomato", soil: "Red soil", temperature: 29, humidity: 62, rainfall: 48, state: "Maharashtra", region: "Pune", season: "Zaid", forecastDays: 5, yieldQty: 11, month: new Date().getMonth() + 1, mandiName: "Pune", msp: 1800, arrivalQty: 1000, rainfallHistory: 48, demandTrend: 0 };
 const localModelStatus = { source: "Browser fallback predictor", detail: "Start the FastAPI backend to use the trained scikit-learn model." };
 
 function inputWithWeather(input) {
@@ -349,31 +349,32 @@ function AuthScreen({ onAuth }) {
     setSuccess("");
   }
 
-  function submit(event) {
+  async function submit(event) {
     event.preventDefault();
     if (!form.email || !form.password) {
       setError("Email/mobile and password are required.");
       return;
     }
-    const users = readStored("farm-users", []);
-    const availableUsers = users.some((item) => item.email === defaultUser.email) ? users : [defaultUser, ...users];
+    setError("");
+    setSuccess("");
     if (mode === "register") {
-      const user = { ...defaultUser, ...form, name: form.name || "Farmer", createdAt: new Date().toISOString() };
-      writeStored("farm-users", [user, ...availableUsers.filter((item) => item.email !== user.email)]);
-      setMode("login");
-      setError("");
-      setSuccess("Registration successful. Please login with your account.");
-      setForm((current) => ({ ...current, password: "" }));
+      try {
+        await registerUser({ ...form, district: form.district, farmSize: form.farmSize });
+        setMode("login");
+        setSuccess("Registration successful. Please login with your account.");
+        setForm((current) => ({ ...current, password: "" }));
+      } catch (error) {
+        setError(error.message || "Registration failed. Start the backend and try again.");
+      }
       return;
     }
-    const found = availableUsers.find((item) => (item.email === form.email || item.mobile === form.email) && item.password === form.password);
-    if (!found) {
-      setSuccess("");
-      setError("Account not found. Please register first or check your password.");
-      return;
+    try {
+      const result = await loginUser({ email: form.email, password: form.password });
+      writeStored("farm-session", result.user);
+      onAuth(result.user);
+    } catch (error) {
+      setError(error.message || "Account not found. Please register first or check your password.");
     }
-    writeStored("farm-session", found);
-    onAuth(found);
   }
 
   return (
@@ -544,7 +545,7 @@ Confidence: ${prediction.confidence}%`;
     fetchModelInfo(controller.signal)
       .then((info) => setModelStatus({
         source: `${info.algorithm}: ${info.models.join(", ")}`,
-        detail: `Training rows ${info.training_rows}, MAE ${info.mae}, R2 ${info.r2}`,
+        detail: `Training rows ${info.training_rows}, MAE ${info.mae}, R2 ${info.r2}, source ${info.data_source}`,
       }))
       .catch(() => setModelStatus(localModelStatus));
     fetchPredictionHistory(controller.signal)
@@ -685,6 +686,12 @@ Confidence: ${prediction.confidence}%`;
               <NumberField label="Rain" value={input.rainfall} min={0} max={140} unit="mm" onChange={(value) => updateInput("rainfall", value)} />
               <NumberField label="Days" value={input.forecastDays} min={1} max={15} unit="d" onChange={(value) => updateInput("forecastDays", value)} />
               <NumberField label="Yield" value={input.yieldQty} min={1} max={120} unit="q" onChange={(value) => updateInput("yieldQty", value)} />
+              <NumberField label="Month" value={input.month} min={1} max={12} unit="" onChange={(value) => updateInput("month", value)} />
+              <TextField label="Mandi name" value={input.mandiName} onChange={(value) => updateInput("mandiName", value)} />
+              <TextField label="MSP Rs/q" type="number" value={input.msp} onChange={(value) => updateInput("msp", Number(value))} />
+              <TextField label="Arrival qty" type="number" value={input.arrivalQty} onChange={(value) => updateInput("arrivalQty", Number(value))} />
+              <NumberField label="Rain history" value={input.rainfallHistory} min={0} max={180} unit="mm" onChange={(value) => updateInput("rainfallHistory", value)} />
+              <NumberField label="Demand trend" value={input.demandTrend} min={-1} max={1} unit="" onChange={(value) => updateInput("demandTrend", value)} />
             </div>
           </article>
           <article className="panel result-panel">
@@ -696,6 +703,10 @@ Confidence: ${prediction.confidence}%`;
               <span>{weather.rainfall}mm rain</span>
             </div>
             <p className="muted model-note"><strong>{modelStatus.source}</strong><br />{modelStatus.detail}</p>
+            <div className="model-list">
+              <div><span>Dataset</span><strong>{prediction.metrics?.dataSource || "Backend model info"}</strong></div>
+              <div><span>Features</span><strong>Date, mandi, MSP, arrivals, rainfall history, demand trend</strong></div>
+            </div>
           </article>
         </section>
 

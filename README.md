@@ -30,6 +30,12 @@ The React frontend lives in `frontend/`. The app starts on the login page every 
 npm run train:model
 ```
 
+For real mandi/APMC/Agmarknet data, place the CSV at:
+
+```text
+backend/data/mandi_prices.csv
+```
+
 This creates the trained scikit-learn model in:
 
 ```text
@@ -43,5 +49,6 @@ backend/model_artifacts/crop_price_model.joblib
 - SQLite database
 - scikit-learn trained ensemble model
 - joblib model persistence
+- Backend login/register with PBKDF2 password hashing
 
 See `TECH_REPORT.md` for the full explanation.
