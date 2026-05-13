@@ -4,12 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite frontend --host 127.0.0.1",
-    "frontend": "vite frontend --host 127.0.0.1",
+    "dev": "vite --config frontend/vite.config.js",
+    "frontend": "vite --config frontend/vite.config.js",
     "backend": ".venv\\Scripts\\python.exe -m uvicorn backend.app:app --host 127.0.0.1 --port 8000",
     "train:model": ".venv\\Scripts\\python.exe -m backend.train_model",
-    "build": "vite build frontend",
-    "preview": "vite preview frontend --host 127.0.0.1"
+    "build": "vite build --config frontend/vite.config.js",
+    "preview": "vite preview --config frontend/vite.config.js --host 127.0.0.1"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.3.4",

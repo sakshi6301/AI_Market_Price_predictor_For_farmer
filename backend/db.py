@@ -48,6 +48,18 @@ def init_db() -> None:
             )
             """
         )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                crop TEXT NOT NULL,
+                condition TEXT NOT NULL,
+                threshold REAL NOT NULL,
+                state TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
         ensure_demo_user(connection)
 
 
@@ -124,18 +136,6 @@ def authenticate_user(identifier: str, password: str) -> dict | None:
     if not secrets.compare_digest(password_hash, row["password_hash"]):
         return None
     return public_user(row)
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS alerts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                crop TEXT NOT NULL,
-                condition TEXT NOT NULL,
-                threshold REAL NOT NULL,
-                state TEXT,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
 
 
 def save_prediction(input_payload: dict, result_payload: dict) -> dict:

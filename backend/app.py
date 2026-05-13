@@ -17,8 +17,8 @@ from .train_model import FEATURES, MODEL_PATH, ensure_model
 app = FastAPI(title="AI Market Price Predictor API", version="2.0.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
-    allow_credentials=True,
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1|\[::1\]|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+):\d+",
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
