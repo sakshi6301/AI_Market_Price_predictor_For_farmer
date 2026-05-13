@@ -456,7 +456,7 @@ function ShareSheet({ text, onClose }) {
 }
 
 function App() {
-  const [user, setUser] = useState(() => readStored("farm-session", null));
+  const [user, setUser] = useState(null);
   const [input, setInput] = useState(() => inputWithWeather(readStored("market-input", initialInput)));
   const [language, setLanguage] = useState(() => readStored("market-language", user?.lang ?? "en"));
   const [activeTab, setActiveTab] = useState("dashboard");
