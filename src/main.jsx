@@ -22,6 +22,7 @@ import {
   Users,
 } from "lucide-react";
 import { STATES_DISTRICTS } from "./locationData.js";
+import { fetchModelInfo, fetchPrediction, fetchPredictionHistory, saveAlertToDatabase, savePredictionToDatabase } from "./api.js";
 import { buildTrend, compareCropChoices, diagnoseHealth, getCityWeather, predictPrice, recommendCrops, crops } from "./mlEngine.js";
 import "./styles.css";
 
@@ -251,6 +252,7 @@ const seasonOptions = ["Kharif", "Rabi", "Zaid"];
 const farmSizes = ["< 1 acre", "1-2 acres", "2-5 acres", "5-10 acres", "10+ acres"];
 const defaultUser = { name: "Farmer", mobile: "", email: "demo@farm.ai", password: "demo123", state: "Maharashtra", district: "Pune", farmSize: "2-5 acres", lang: "en", notifications: true };
 const initialInput = { crop: "Tomato", soil: "Red soil", temperature: 29, humidity: 62, rainfall: 48, state: "Maharashtra", region: "Pune", season: "Zaid", forecastDays: 5, yieldQty: 11 };
+const localModelStatus = { source: "Browser fallback predictor", detail: "Start the FastAPI backend to use the trained scikit-learn model." };
 
 function inputWithWeather(input) {
   const weather = getCityWeather(input);
@@ -471,6 +473,8 @@ function App() {
   const [healthPreview, setHealthPreview] = useState("");
   const [symptoms, setSymptoms] = useState(["Yellow leaves"]);
   const [profileForm, setProfileForm] = useState(() => readStored("farm-session", defaultUser) || defaultUser);
+  const [apiPrediction, setApiPrediction] = useState(null);
+  const [modelStatus, setModelStatus] = useState(localModelStatus);
 
   const copy = UI[language] ?? UI.en;
   const t = (key) => copy[key] ?? UI.en[key] ?? key;
@@ -485,7 +489,8 @@ function App() {
   ];
   const districtOptions = STATES_DISTRICTS[input.state] ?? [];
   const weather = useMemo(() => getCityWeather(input), [input.state, input.region, input.season]);
-  const prediction = useMemo(() => predictPrice(input), [input]);
+  const fallbackPrediction = useMemo(() => predictPrice(input), [input]);
+  const prediction = apiPrediction ?? fallbackPrediction;
   const trend = useMemo(() => buildTrend(input.crop, input.region), [input.crop, input.region]);
   const recommendations = useMemo(() => recommendCrops(input), [input]);
   const comparison = useMemo(() => compareCropChoices(input, compare.cropA, compare.cropB), [input, compare]);
@@ -516,6 +521,39 @@ Confidence: ${prediction.confidence}%`;
   useEffect(() => {
     if (user) setProfileForm(user);
   }, [user]);
+  useEffect(() => {
+    if (!user) return;
+    const controller = new AbortController();
+    fetchPrediction(input, controller.signal)
+      .then((result) => {
+        setApiPrediction(result);
+        setModelStatus({
+          source: result.modelSource,
+          detail: `Trained on ${result.metrics?.trainingRows ?? "ML"} rows, MAE ${result.metrics?.mae ?? "n/a"}, R2 ${result.metrics?.r2 ?? "n/a"}`,
+        });
+      })
+      .catch(() => {
+        setApiPrediction(null);
+        setModelStatus(localModelStatus);
+      });
+    return () => controller.abort();
+  }, [input, user]);
+  useEffect(() => {
+    if (!user) return;
+    const controller = new AbortController();
+    fetchModelInfo(controller.signal)
+      .then((info) => setModelStatus({
+        source: `${info.algorithm}: ${info.models.join(", ")}`,
+        detail: `Training rows ${info.training_rows}, MAE ${info.mae}, R2 ${info.r2}`,
+      }))
+      .catch(() => setModelStatus(localModelStatus));
+    fetchPredictionHistory(controller.signal)
+      .then((items) => {
+        if (Array.isArray(items) && items.length) setHistory(items);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [user]);
 
   if (!user) return <AuthScreen onAuth={(nextUser) => { setUser(nextUser); setLanguage(nextUser.lang || "en"); }} />;
 
@@ -531,14 +569,25 @@ Confidence: ${prediction.confidence}%`;
     setInput((current) => inputWithWeather(current));
   }
 
-  function savePrediction() {
-    const item = { id: Date.now(), savedAt: new Date().toLocaleString(), input, prediction };
-    setHistory((current) => [item, ...current].slice(0, 30));
+  async function savePrediction() {
+    try {
+      const saved = await savePredictionToDatabase(input);
+      setHistory((current) => [saved, ...current.filter((item) => item.id !== saved.id)].slice(0, 30));
+    } catch {
+      const item = { id: Date.now(), savedAt: new Date().toLocaleString(), input, prediction };
+      setHistory((current) => [item, ...current].slice(0, 30));
+    }
   }
 
-  function addAlert() {
+  async function addAlert() {
     const threshold = Math.max(1, Number(alertForm.threshold) || 0);
-    setAlerts((current) => [{ id: Date.now(), crop: alertForm.crop || input.crop, condition: alertForm.condition, threshold, state: alertForm.state, createdAt: new Date().toLocaleDateString() }, ...current]);
+    const nextAlert = { id: Date.now(), crop: alertForm.crop || input.crop, condition: alertForm.condition, threshold, state: alertForm.state, createdAt: new Date().toLocaleDateString() };
+    try {
+      const saved = await saveAlertToDatabase(nextAlert);
+      setAlerts((current) => [saved, ...current]);
+    } catch {
+      setAlerts((current) => [nextAlert, ...current]);
+    }
   }
 
   function saveProfile(event) {
@@ -646,7 +695,7 @@ Confidence: ${prediction.confidence}%`;
               <strong>{weather.temperature}C</strong>
               <span>{weather.rainfall}mm rain</span>
             </div>
-            <p className="muted model-note">Final price uses three local forecasting methods in the background.</p>
+            <p className="muted model-note"><strong>{modelStatus.source}</strong><br />{modelStatus.detail}</p>
           </article>
         </section>
 

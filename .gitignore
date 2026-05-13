@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.venv/
+backend/model_artifacts/
+backend/market_data.db
+__pycache__/
+*.pyc
