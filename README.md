@@ -19,10 +19,28 @@ npm run dev
 Then open:
 
 ```text
-http://127.0.0.1:5173
+http://127.0.0.1:5174
 ```
 
 The React frontend lives in `frontend/`. The app starts on the login page every time it is opened.
+
+## MongoDB Atlas Database
+
+The backend uses MongoDB Atlas for users, prediction history, and alerts. Set these environment variables before starting the backend:
+
+```powershell
+$env:MONGODB_URI="mongodb+srv://<username>:<password>@<cluster-url>/?retryWrites=true&w=majority"
+$env:MONGODB_DB_NAME="ai_market_price_predictor"
+npm run backend
+```
+
+The backend creates and uses these Atlas collections:
+
+```text
+users
+predictions
+alerts
+```
 
 ## Train the ML Model
 
@@ -46,7 +64,7 @@ backend/model_artifacts/crop_price_model.joblib
 
 - React + Vite frontend
 - FastAPI backend
-- SQLite database
+- MongoDB Atlas database
 - scikit-learn trained ensemble model
 - joblib model persistence
 - Backend login/register with PBKDF2 password hashing

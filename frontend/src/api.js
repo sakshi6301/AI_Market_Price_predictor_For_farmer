@@ -13,6 +13,8 @@ async function requestJson(path, options = {}) {
       const response = await fetch(`${base}${path}`, options);
       const contentType = response.headers.get("content-type") || "";
       const payload = contentType.includes("application/json") ? await response.json() : null;
+      if (base === "" && !contentType.includes("application/json")) continue;
+      if (base === "" && !response.ok) continue;
       if (!response.ok) throw new Error(payload?.detail || "Request failed");
       return payload;
     } catch (error) {

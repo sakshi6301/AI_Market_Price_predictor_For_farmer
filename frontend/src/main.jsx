@@ -256,7 +256,14 @@ const localModelStatus = { source: "Browser fallback predictor", detail: "Start 
 
 function inputWithWeather(input) {
   const weather = getCityWeather(input);
-  return { ...input, temperature: weather.temperature, humidity: weather.humidity, rainfall: weather.rainfall };
+  return {
+    ...input,
+    temperature: weather.temperature,
+    humidity: weather.humidity,
+    rainfall: weather.rainfall,
+    rainfallHistory: weather.rainfall,
+    mandiName: input.region,
+  };
 }
 
 function formatINR(value) {
@@ -331,6 +338,20 @@ function TrendChart({ values }) {
     return `${x},${y}`;
   });
   return <svg className="trend-chart" viewBox="0 0 100 100" role="img" aria-label="Market price trend"><polyline points={points.join(" ")} />{values.map((value, index) => <circle key={index} cx={(index / Math.max(values.length - 1, 1)) * 100} cy={84 - ((value - min) / Math.max(max - min, 1)) * 68} r="1.8" />)}</svg>;
+}
+
+function rgbToHsl(red, green, blue) {
+  const r = red / 255;
+  const g = green / 255;
+  const b = blue / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const lightness = (max + min) / 2;
+  if (max === min) return { hue: 0, saturation: 0, lightness };
+  const delta = max - min;
+  const saturation = lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+  const hueBase = max === r ? (g - b) / delta + (g < b ? 6 : 0) : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
+  return { hue: hueBase * 60, saturation, lightness };
 }
 
 function AuthScreen({ onAuth }) {
@@ -607,7 +628,7 @@ Confidence: ${prediction.confidence}%`;
     setHealthPreview(URL.createObjectURL(file));
     const bitmap = await createImageBitmap(file);
     const canvas = document.createElement("canvas");
-    const size = 80;
+    const size = 180;
     canvas.width = size;
     canvas.height = size;
     const context = canvas.getContext("2d");
@@ -615,25 +636,64 @@ Confidence: ${prediction.confidence}%`;
     const pixels = context.getImageData(0, 0, size, size).data;
     let green = 0;
     let yellow = 0;
-    let dry = 0;
-    let pale = 0;
-    for (let index = 0; index < pixels.length; index += 16) {
+    let brown = 0;
+    let white = 0;
+    let dark = 0;
+    let leaf = 0;
+    let edgeStrength = 0;
+    let samples = 0;
+    for (let index = 0; index < pixels.length; index += 4) {
       const red = pixels[index];
       const g = pixels[index + 1];
       const blue = pixels[index + 2];
-      if (g > red * 1.08 && g > blue * 1.08) green += 1;
-      if (red > 120 && g > 105 && blue < 105) yellow += 1;
-      if (red > 95 && g > 65 && blue < 75 && red > g * 1.12) dry += 1;
-      if (red > 180 && g > 180 && blue > 170) pale += 1;
+      const { hue, saturation, lightness } = rgbToHsl(red, g, blue);
+      const isGreen = hue >= 55 && hue <= 165 && saturation > 0.16 && lightness > 0.12 && lightness < 0.78;
+      const isYellow = hue >= 35 && hue < 62 && saturation > 0.22 && lightness > 0.28;
+      const isBrown = hue >= 12 && hue < 42 && saturation > 0.18 && lightness > 0.16 && lightness < 0.55;
+      const isWhite = saturation < 0.2 && lightness > 0.72;
+      const isDark = lightness < 0.16 && saturation > 0.08;
+      if (isGreen) green += 1;
+      if (isYellow) yellow += 1;
+      if (isBrown) brown += 1;
+      if (isWhite) white += 1;
+      if (isDark) dark += 1;
+      if (isGreen || isYellow || isBrown || isWhite || isDark) leaf += 1;
+      const pixelNumber = index / 4;
+      const x = pixelNumber % size;
+      const y = Math.floor(pixelNumber / size);
+      if (x > 0 && y > 0) {
+        const previous = index - 4;
+        const above = index - size * 4;
+        edgeStrength += Math.abs(red - pixels[previous]) + Math.abs(g - pixels[previous + 1]) + Math.abs(blue - pixels[previous + 2]);
+        edgeStrength += Math.abs(red - pixels[above]) + Math.abs(g - pixels[above + 1]) + Math.abs(blue - pixels[above + 2]);
+        samples += 2;
+      }
     }
-    const total = green + yellow + dry + pale || 1;
+    const totalPixels = size * size;
+    const leafPixels = leaf || 1;
+    const yellowPct = Math.round((yellow / leafPixels) * 100);
+    const brownPct = Math.round((brown / leafPixels) * 100);
+    const whitePct = Math.round((white / leafPixels) * 100);
+    const darkPct = Math.round((dark / leafPixels) * 100);
+    const greenPct = Math.round((green / leafPixels) * 100);
+    const leafCoverage = Math.round((leaf / totalPixels) * 100);
+    const stressRatio = Math.round(((yellow + brown + white + dark) / leafPixels) * 100);
+    const sharpness = Math.round(edgeStrength / Math.max(samples, 1));
+    const blurRisk = sharpness < 14 ? "High" : sharpness < 24 ? "Medium" : "Low";
+    const quality = leafCoverage < 18 ? "Low leaf coverage" : blurRisk === "High" ? "Blurry photo" : "Good";
     const detected = [];
-    if (yellow / total > 0.22) detected.push("Yellow leaves");
-    if (dry / total > 0.18) detected.push("Dry soil");
-    if (pale / total > 0.18) detected.push("White spots");
-    if (green / total < 0.35) detected.push("Slow growth");
+    if (yellowPct > 18) detected.push("Yellow leaves");
+    if (brownPct > 14) detected.push("Dry stress");
+    if (whitePct > 9) detected.push("White spots");
+    if (darkPct > 10) detected.push("Dark lesions");
+    if (greenPct < 42 || leafCoverage < 20) detected.push("Slow growth");
     setSymptoms(detected.length ? detected : ["No visible stress"]);
-    setHealthPhoto({ name: file.name, size: file.size, type: file.type, green, yellow, dry, pale });
+    setHealthPhoto({
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      scan: { greenPct, yellowPct, brownPct, whitePct, darkPct, leafCoverage, stressRatio, sharpness, blurRisk, quality },
+    });
   }
 
   function logout() {
@@ -686,12 +746,6 @@ Confidence: ${prediction.confidence}%`;
               <NumberField label="Rain" value={input.rainfall} min={0} max={140} unit="mm" onChange={(value) => updateInput("rainfall", value)} />
               <NumberField label="Days" value={input.forecastDays} min={1} max={15} unit="d" onChange={(value) => updateInput("forecastDays", value)} />
               <NumberField label="Yield" value={input.yieldQty} min={1} max={120} unit="q" onChange={(value) => updateInput("yieldQty", value)} />
-              <NumberField label="Month" value={input.month} min={1} max={12} unit="" onChange={(value) => updateInput("month", value)} />
-              <TextField label="Mandi name" value={input.mandiName} onChange={(value) => updateInput("mandiName", value)} />
-              <TextField label="MSP Rs/q" type="number" value={input.msp} onChange={(value) => updateInput("msp", Number(value))} />
-              <TextField label="Arrival qty" type="number" value={input.arrivalQty} onChange={(value) => updateInput("arrivalQty", Number(value))} />
-              <NumberField label="Rain history" value={input.rainfallHistory} min={0} max={180} unit="mm" onChange={(value) => updateInput("rainfallHistory", value)} />
-              <NumberField label="Demand trend" value={input.demandTrend} min={-1} max={1} unit="" onChange={(value) => updateInput("demandTrend", value)} />
             </div>
           </article>
           <article className="panel result-panel">
@@ -701,11 +755,6 @@ Confidence: ${prediction.confidence}%`;
               <span>{weather.condition}</span>
               <strong>{weather.temperature}C</strong>
               <span>{weather.rainfall}mm rain</span>
-            </div>
-            <p className="muted model-note"><strong>{modelStatus.source}</strong><br />{modelStatus.detail}</p>
-            <div className="model-list">
-              <div><span>Dataset</span><strong>{prediction.metrics?.dataSource || "Backend model info"}</strong></div>
-              <div><span>Features</span><strong>Date, mandi, MSP, arrivals, rainfall history, demand trend</strong></div>
             </div>
           </article>
         </section>
@@ -756,10 +805,20 @@ Confidence: ${prediction.confidence}%`;
             <div className="panel-title"><Camera /><h2>{t("healthTitle")}</h2></div>
             <p className="muted">{t("healthHelp")}</p>
             <div className="form-grid"><CropField label={t("cropName")} value={healthCrop} onChange={setHealthCrop} /><label className="field"><span>{t("uploadPhoto")}</span><input type="file" accept="image/*" onChange={(event) => onHealthPhoto(event.target.files?.[0])} /></label></div>
-            {healthPreview && <img className="photo-preview" src={healthPreview} alt="Uploaded crop" />}
-            <div className="chips">{["Yellow leaves", "Dry soil", "Slow growth", "White spots"].map((symptom) => <button key={symptom} className={symptoms.includes(symptom) ? "active" : ""} onClick={() => setSymptoms((current) => current.includes(symptom) ? current.filter((item) => item !== symptom) : [...current, symptom])}>{symptom}</button>)}</div>
+            <div className="health-workspace">
+              <div className="health-preview-box">
+                {healthPreview ? <img className="photo-preview" src={healthPreview} alt="Uploaded crop" /> : <div className="photo-empty"><Camera /><span>Upload a clear leaf photo</span></div>}
+              </div>
+              <div className="scan-panel">
+                <div><span>Scan quality</span><strong>{healthPhoto?.scan?.quality ?? "Waiting for photo"}</strong></div>
+                <div><span>Leaf coverage</span><strong>{healthPhoto?.scan ? `${healthPhoto.scan.leafCoverage}%` : "--"}</strong></div>
+                <div><span>Stress area</span><strong>{healthPhoto?.scan ? `${healthPhoto.scan.stressRatio}%` : "--"}</strong></div>
+                <div><span>Blur risk</span><strong>{healthPhoto?.scan?.blurRisk ?? "--"}</strong></div>
+              </div>
+            </div>
+            <div className="chips">{["Yellow leaves", "Dry stress", "Slow growth", "White spots", "Dark lesions"].map((symptom) => <button key={symptom} className={symptoms.includes(symptom) ? "active" : ""} onClick={() => setSymptoms((current) => current.includes(symptom) ? current.filter((item) => item !== symptom) : [...current, symptom])}>{symptom}</button>)}</div>
           </article>
-          <article className="panel"><div className="panel-title"><ShieldCheck /><h2>{t("healthResult")}</h2></div><div className={`guidance severity-${health.severity.toLowerCase()}`}><div className="health-score"><strong>{health.issue}</strong><span>{health.severity} risk - {health.confidence}% confidence</span></div><p>{health.advice}</p><p>{health.prevention}</p></div><div className="action-list">{health.actions.map((action) => <span key={action}>{action}</span>)}</div><div className="model-list"><div><span>Treatment</span><strong>{health.fertilizer}</strong></div>{healthPhoto && <><div><span>{t("localPhotoScan")}</span><strong>{symptoms.join(", ")}</strong></div><div><span>{t("file")}</span><strong>{healthPhoto.name}</strong></div></>}</div><p className="muted">{t("healthNote")}</p></article>
+          <article className="panel"><div className="panel-title"><ShieldCheck /><h2>{t("healthResult")}</h2></div><div className={`guidance severity-${health.severity.toLowerCase()}`}><div className="health-score"><strong>{health.issue}</strong><span>{health.severity} risk - {Math.round(health.confidence)}% confidence</span></div><p>{health.advice}</p><p>{health.prevention}</p></div><div className="action-list">{health.actions.map((action) => <span key={action}>{action}</span>)}</div><div className="health-metrics">{healthPhoto?.scan && Object.entries({ Healthy: healthPhoto.scan.greenPct, Yellow: healthPhoto.scan.yellowPct, Dry: healthPhoto.scan.brownPct, Spots: healthPhoto.scan.whitePct, Lesions: healthPhoto.scan.darkPct }).map(([label, value]) => <div key={label}><span>{label}</span><b>{value}%</b><div className="mini-track"><span style={{ width: `${Math.min(value, 100)}%` }} /></div></div>)}</div><div className="model-list"><div><span>Treatment</span><strong>{health.fertilizer}</strong></div>{healthPhoto && <><div><span>{t("localPhotoScan")}</span><strong>{symptoms.join(", ")}</strong></div><div><span>{t("file")}</span><strong>{healthPhoto.name}</strong></div></>}</div><p className="muted">For best results, upload a close, bright, focused photo of 2-3 affected leaves. This local scan supports field decisions but does not replace lab or agronomist diagnosis.</p></article>
         </section>
 
         <section className={`grid two ${activeTab !== "history" ? "tab-hidden" : ""}`} id="history">

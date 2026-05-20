@@ -11,7 +11,7 @@ Full-stack crop market price prediction app.
 - JavaScript / JSX: frontend application logic.
 - CSS: responsive layout, panels, forms, dashboard, dark mode, and reduced typography scale.
 - lucide-react: icons for navigation and actions.
-- localStorage: keeps a browser fallback copy of session, settings, alerts, and prediction history.
+- localStorage: keeps browser-side session and UI preferences.
 
 ## Backend
 
@@ -19,8 +19,8 @@ Full-stack crop market price prediction app.
 - FastAPI: REST API for prediction, model metadata, history, alerts, and health checks.
 - Uvicorn: ASGI server for running FastAPI locally.
 - Pydantic: request validation for prediction and alert payloads.
-- SQLite: local database stored at `backend/market_data.db`.
-- sqlite3: built-in Python database adapter used by `backend/db.py`.
+- MongoDB Atlas: cloud database for users, prediction history, and alerts.
+- pymongo/dnspython: MongoDB Atlas driver and SRV connection support used by `backend/db.py`.
 - PBKDF2-HMAC-SHA256: password hashing for backend login/register.
 
 ## Machine Learning
@@ -66,10 +66,10 @@ The target value is crop market price per quintal. The training script stores:
 - `GET /api/health`: backend and model health.
 - `GET /api/model-info`: algorithm, model list, features, MAE, R2, and training row count.
 - `POST /api/predict`: predicts crop price using the trained scikit-learn model.
-- `GET /api/history`: reads saved predictions from SQLite.
-- `POST /api/history`: saves a prediction to SQLite.
-- `GET /api/alerts`: reads saved alerts from SQLite.
-- `POST /api/alerts`: saves an alert to SQLite.
+- `GET /api/history`: reads saved predictions from MongoDB Atlas.
+- `POST /api/history`: saves a prediction to MongoDB Atlas.
+- `GET /api/alerts`: reads saved alerts from MongoDB Atlas.
+- `POST /api/alerts`: saves an alert to MongoDB Atlas.
 
 ## Data Flow
 
@@ -79,7 +79,7 @@ The target value is crop market price per quintal. The training script stores:
 4. The scikit-learn pipeline transforms categorical and numeric features.
 5. The trained ensemble predicts price per quintal.
 6. FastAPI returns prediction, confidence, risk, demand, crop fit, and model metrics.
-7. SQLite stores prediction and alert records.
+7. MongoDB Atlas stores user, prediction, and alert records.
 8. React displays the backend result. If the backend is offline, it uses the old local JavaScript predictor as a fallback.
 
 ## Important Note

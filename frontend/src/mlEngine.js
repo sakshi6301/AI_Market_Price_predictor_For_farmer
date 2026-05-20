@@ -334,24 +334,27 @@ export function compareCropChoices(input, cropA, cropB) {
 
 export function diagnoseHealth(symptoms, crop = "Crop", imageMeta = null) {
   const selected = new Set(symptoms);
-  const imageHint = imageMeta ? ` Photo file "${imageMeta.name}" is attached for agronomist review.` : "";
-  const photoConfidence = imageMeta ? 14 : 0;
-  if (selected.has("White spots") && selected.has("Yellow leaves")) {
+  const scan = imageMeta?.scan;
+  const imageHint = imageMeta ? ` Image scan quality: ${scan?.quality ?? "usable"}.` : "";
+  const stressRatio = scan?.stressRatio ?? 0;
+  const photoConfidence = imageMeta ? Math.round(10 + Math.min(18, (scan?.leafCoverage ?? 0) * 0.18) - (scan?.blurRisk === "High" ? 8 : 0)) : 0;
+
+  if (selected.has("White spots") && (selected.has("Yellow leaves") || selected.has("Dark lesions"))) {
     return {
-      issue: `Possible fungal infection in ${crop}`,
+      issue: `Possible fungal leaf disease in ${crop}`,
       severity: "High",
-      confidence: 76 + photoConfidence,
-      fertilizer: "Potassium-rich foliar spray",
-      advice: "Remove badly affected leaves, avoid overhead watering, and spray only after confirming with a local agronomist.",
+      confidence: clamp(76 + photoConfidence + stressRatio * 0.18, 60, 94),
+      fertilizer: "Potassium support plus approved fungicide after expert confirmation",
+      advice: "Separate affected plants if possible, remove badly affected leaves, and avoid overhead watering.",
       prevention: `Use morning irrigation, improve airflow, and avoid dense planting.${imageHint}`,
-      actions: ["Isolate affected patch", "Avoid leaf wetness", "Review in 3 days"],
+      actions: ["Isolate affected patch", "Avoid leaf wetness", "Consult agronomist", "Review in 3 days"],
     };
   }
-  if (selected.has("Dry soil") && selected.has("Slow growth")) {
+  if (selected.has("Dry stress") || (selected.has("Dry soil") && selected.has("Slow growth"))) {
     return {
       issue: `Water stress with nutrient slowdown in ${crop}`,
       severity: "Medium",
-      confidence: 70 + photoConfidence,
+      confidence: clamp(68 + photoConfidence + stressRatio * 0.12, 55, 90),
       fertilizer: "Balanced NPK compost mix",
       advice: "Increase watering in smaller cycles and apply compost only after soil moisture improves.",
       prevention: `Mulch soil to reduce evaporation and check drip lines for blockage.${imageHint}`,
@@ -362,7 +365,7 @@ export function diagnoseHealth(symptoms, crop = "Crop", imageMeta = null) {
     return {
       issue: `Nitrogen deficiency likely in ${crop}`,
       severity: "Medium",
-      confidence: 64 + photoConfidence,
+      confidence: clamp(62 + photoConfidence + stressRatio * 0.1, 52, 88),
       fertilizer: "Nitrogen-rich organic manure",
       advice: "Apply a controlled dose after soil moisture check. Do not overapply if leaves are also spotted.",
       prevention: `Rotate crops and test soil monthly.${imageHint}`,
@@ -372,7 +375,7 @@ export function diagnoseHealth(symptoms, crop = "Crop", imageMeta = null) {
   return {
     issue: `No critical issue detected for ${crop}`,
     severity: "Low",
-    confidence: 58 + photoConfidence,
+    confidence: clamp(58 + photoConfidence, 50, 84),
     fertilizer: "Maintain regular compost schedule",
     advice: "Monitor leaves and soil moisture weekly.",
     prevention: `Keep field sanitation and balanced irrigation.${imageHint}`,

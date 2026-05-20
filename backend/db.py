@@ -1,66 +1,40 @@
 from __future__ import annotations
 
-import json
+import os
 import secrets
-import sqlite3
+from datetime import datetime, timezone
 from hashlib import pbkdf2_hmac
-from pathlib import Path
+from typing import Any
 
-DB_PATH = Path(__file__).resolve().parent / "market_data.db"
+from pymongo import ASCENDING, DESCENDING, MongoClient
+from pymongo.errors import DuplicateKeyError
+
+MONGODB_URI = os.getenv("MONGODB_URI", "").strip()
+MONGODB_DB_NAME = os.getenv("MONGODB_DB_NAME", "ai_market_price_predictor")
+_mongo_client: MongoClient | None = None
 
 
-def connect() -> sqlite3.Connection:
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    return connection
+def mongo_database():
+    global _mongo_client
+    if not MONGODB_URI:
+        raise RuntimeError("MONGODB_URI is required. Configure your MongoDB Atlas connection string before starting the backend.")
+    if _mongo_client is None:
+        _mongo_client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=6000)
+    return _mongo_client[MONGODB_DB_NAME]
+
+
+def describe_database() -> dict:
+    return {"type": "mongodb_atlas", "database": MONGODB_DB_NAME}
 
 
 def init_db() -> None:
-    with connect() as connection:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                email TEXT NOT NULL UNIQUE,
-                mobile TEXT,
-                password_hash TEXT NOT NULL,
-                salt TEXT NOT NULL,
-                state TEXT,
-                district TEXT,
-                farm_size TEXT,
-                lang TEXT NOT NULL DEFAULT 'en',
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS predictions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                crop TEXT NOT NULL,
-                state TEXT NOT NULL,
-                region TEXT NOT NULL,
-                predicted_price REAL NOT NULL,
-                confidence INTEGER NOT NULL,
-                payload TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS alerts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                crop TEXT NOT NULL,
-                condition TEXT NOT NULL,
-                threshold REAL NOT NULL,
-                state TEXT,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        ensure_demo_user(connection)
+    database = mongo_database()
+    database.command("ping")
+    database.users.create_index([("email", ASCENDING)], unique=True)
+    database.users.create_index([("mobile", ASCENDING)], sparse=True)
+    database.predictions.create_index([("created_at", DESCENDING)])
+    database.alerts.create_index([("created_at", DESCENDING)])
+    ensure_demo_user()
 
 
 def hash_password(password: str, salt: str | None = None) -> tuple[str, str]:
@@ -69,67 +43,70 @@ def hash_password(password: str, salt: str | None = None) -> tuple[str, str]:
     return digest.hex(), password_salt
 
 
-def ensure_demo_user(connection: sqlite3.Connection) -> None:
-    existing = connection.execute("SELECT id FROM users WHERE email = ?", ("demo@farm.ai",)).fetchone()
+def ensure_demo_user() -> None:
+    database = mongo_database()
+    existing = database.users.find_one({"email": "demo@farm.ai"}, {"_id": 1})
     if existing:
         return
     password_hash, salt = hash_password("demo123")
-    connection.execute(
-        """
-        INSERT INTO users (name, email, mobile, password_hash, salt, state, district, farm_size, lang)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        ("Farmer", "demo@farm.ai", "", password_hash, salt, "Maharashtra", "Pune", "2-5 acres", "en"),
-    )
+    database.users.insert_one({
+        "name": "Farmer",
+        "email": "demo@farm.ai",
+        "mobile": "",
+        "password_hash": password_hash,
+        "salt": salt,
+        "state": "Maharashtra",
+        "district": "Pune",
+        "farm_size": "2-5 acres",
+        "lang": "en",
+        "created_at": datetime.now(timezone.utc),
+    })
 
 
-def public_user(row: sqlite3.Row) -> dict:
+def timestamp(value: Any) -> str:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value or "")
+
+
+def public_user(row: dict) -> dict:
     return {
-        "id": row["id"],
+        "id": str(row["_id"]),
         "name": row["name"],
         "email": row["email"],
-        "mobile": row["mobile"] or "",
-        "state": row["state"] or "Maharashtra",
-        "district": row["district"] or "Pune",
-        "farmSize": row["farm_size"] or "2-5 acres",
-        "lang": row["lang"] or "en",
-        "createdAt": row["created_at"],
+        "mobile": row.get("mobile") or "",
+        "state": row.get("state") or "Maharashtra",
+        "district": row.get("district") or "Pune",
+        "farmSize": row.get("farm_size") or "2-5 acres",
+        "lang": row.get("lang") or "en",
+        "createdAt": timestamp(row.get("created_at")),
     }
 
 
 def create_user(payload: dict) -> dict:
     password_hash, salt = hash_password(payload["password"])
-    with connect() as connection:
-        try:
-            cursor = connection.execute(
-                """
-                INSERT INTO users (name, email, mobile, password_hash, salt, state, district, farm_size, lang)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    payload.get("name") or "Farmer",
-                    payload["email"],
-                    payload.get("mobile") or "",
-                    password_hash,
-                    salt,
-                    payload.get("state") or "Maharashtra",
-                    payload.get("district") or "Pune",
-                    payload.get("farmSize") or "2-5 acres",
-                    payload.get("lang") or "en",
-                ),
-            )
-        except sqlite3.IntegrityError as exc:
-            raise ValueError("Email already registered") from exc
-        row = connection.execute("SELECT * FROM users WHERE id = ?", (cursor.lastrowid,)).fetchone()
-    return public_user(row)
+    user_doc = {
+        "name": payload.get("name") or "Farmer",
+        "email": payload["email"],
+        "mobile": payload.get("mobile") or "",
+        "password_hash": password_hash,
+        "salt": salt,
+        "state": payload.get("state") or "Maharashtra",
+        "district": payload.get("district") or "Pune",
+        "farm_size": payload.get("farmSize") or "2-5 acres",
+        "lang": payload.get("lang") or "en",
+        "created_at": datetime.now(timezone.utc),
+    }
+    try:
+        result = mongo_database().users.insert_one(user_doc)
+    except DuplicateKeyError as exc:
+        raise ValueError("Email already registered") from exc
+    user_doc["_id"] = result.inserted_id
+    return public_user(user_doc)
 
 
 def authenticate_user(identifier: str, password: str) -> dict | None:
-    with connect() as connection:
-        row = connection.execute(
-            "SELECT * FROM users WHERE email = ? OR mobile = ?",
-            (identifier, identifier),
-        ).fetchone()
+    row = mongo_database().users.find_one({"$or": [{"email": identifier}, {"mobile": identifier}]})
     if not row:
         return None
     password_hash, _ = hash_password(password, row["salt"])
@@ -139,57 +116,60 @@ def authenticate_user(identifier: str, password: str) -> dict | None:
 
 
 def save_prediction(input_payload: dict, result_payload: dict) -> dict:
-    with connect() as connection:
-        cursor = connection.execute(
-            """
-            INSERT INTO predictions (crop, state, region, predicted_price, confidence, payload)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                input_payload["crop"],
-                input_payload["state"],
-                input_payload["region"],
-                result_payload["predicted"],
-                result_payload["confidence"],
-                json.dumps({"input": input_payload, "prediction": result_payload}),
-            ),
-        )
-        prediction_id = cursor.lastrowid
-        row = connection.execute("SELECT * FROM predictions WHERE id = ?", (prediction_id,)).fetchone()
-    return prediction_row(row)
+    payload = {"input": input_payload, "prediction": result_payload}
+    doc = {
+        "crop": input_payload["crop"],
+        "state": input_payload["state"],
+        "region": input_payload["region"],
+        "predicted_price": result_payload["predicted"],
+        "confidence": result_payload["confidence"],
+        "payload": payload,
+        "created_at": datetime.now(timezone.utc),
+    }
+    result = mongo_database().predictions.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    return prediction_row(doc)
 
 
 def list_predictions(limit: int = 30) -> list[dict]:
-    with connect() as connection:
-        rows = connection.execute(
-            "SELECT * FROM predictions ORDER BY created_at DESC, id DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+    rows = mongo_database().predictions.find().sort("created_at", DESCENDING).limit(limit)
     return [prediction_row(row) for row in rows]
 
 
 def save_alert(payload: dict) -> dict:
-    with connect() as connection:
-        cursor = connection.execute(
-            "INSERT INTO alerts (crop, condition, threshold, state) VALUES (?, ?, ?, ?)",
-            (payload["crop"], payload["condition"], payload["threshold"], payload.get("state") or None),
-        )
-        alert_id = cursor.lastrowid
-        row = connection.execute("SELECT * FROM alerts WHERE id = ?", (alert_id,)).fetchone()
-    return dict(row)
+    doc = {
+        "crop": payload["crop"],
+        "condition": payload["condition"],
+        "threshold": payload["threshold"],
+        "state": payload.get("state") or None,
+        "created_at": datetime.now(timezone.utc),
+    }
+    result = mongo_database().alerts.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    return alert_row(doc)
 
 
 def list_alerts() -> list[dict]:
-    with connect() as connection:
-        rows = connection.execute("SELECT * FROM alerts ORDER BY created_at DESC, id DESC").fetchall()
-    return [dict(row) for row in rows]
+    rows = mongo_database().alerts.find().sort("created_at", DESCENDING)
+    return [alert_row(row) for row in rows]
 
 
-def prediction_row(row: sqlite3.Row) -> dict:
-    payload = json.loads(row["payload"])
+def alert_row(row: dict) -> dict:
     return {
-        "id": row["id"],
-        "savedAt": row["created_at"],
+        "id": str(row["_id"]),
+        "crop": row["crop"],
+        "condition": row["condition"],
+        "threshold": row["threshold"],
+        "state": row.get("state"),
+        "created_at": timestamp(row.get("created_at")),
+    }
+
+
+def prediction_row(row: dict) -> dict:
+    payload = row["payload"]
+    return {
+        "id": str(row["_id"]),
+        "savedAt": timestamp(row.get("created_at")),
         "input": payload["input"],
         "prediction": payload["prediction"],
     }

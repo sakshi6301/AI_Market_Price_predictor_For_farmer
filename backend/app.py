@@ -5,14 +5,20 @@ from functools import lru_cache
 
 import joblib
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import db
 from .data import CITY_MULTIPLIERS, clamp, crop_profile
 from .train_model import FEATURES, MODEL_PATH, ensure_model
+
+PROJECT_DIR = Path(__file__).resolve().parents[1]
+FRONTEND_DIST = PROJECT_DIR / "frontend" / "dist"
 
 app = FastAPI(title="AI Market Price Predictor API", version="2.0.0")
 app.add_middleware(
@@ -22,6 +28,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+if (FRONTEND_DIST / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
 
 class PredictionInput(BaseModel):
@@ -125,17 +134,15 @@ def infer_business_fields(input_data: PredictionInput, predicted: float) -> dict
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"status": "ok", "database": str(db.DB_PATH.name), "model": str(MODEL_PATH.name)}
+    return {"status": "ok", "database": db.describe_database(), "model": str(MODEL_PATH.name)}
 
 
 @app.get("/")
-def root() -> dict:
-    return {
-        "name": "AI Market Price Predictor API",
-        "docs": "/docs",
-        "api": "/api",
-        "predict": "POST /api/predict",
-    }
+def root():
+    index_file = FRONTEND_DIST / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    return {"name": "AI Market Price Predictor API", "docs": "/docs", "api": "/api", "predict": "POST /api/predict"}
 
 
 @app.get("/api")
@@ -218,3 +225,13 @@ def alerts() -> list[dict]:
 @app.post("/api/alerts")
 def create_alert(alert: AlertInput) -> dict:
     return db.save_alert(alert.model_dump())
+
+
+@app.get("/{path:path}")
+def frontend_fallback(path: str):
+    if path.startswith("api") or path in {"docs", "openapi.json"}:
+        raise HTTPException(status_code=404, detail="Not found")
+    index_file = FRONTEND_DIST / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    raise HTTPException(status_code=404, detail="Frontend build not found. Run npm run build first.")
